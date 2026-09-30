@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
+import { useStore } from '../store/store.jsx'
 
 const NAV = [
   { to: '/app', label: 'Dashboard', end: true, icon: IconDashboard },
@@ -26,8 +27,21 @@ export default function Shell() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
+  const { state } = useStore()
 
   const title = TITLE_MAP.find(([path]) => location.pathname.startsWith(path))?.[1] || 'SponsorFinder'
+
+  // Show "Kembali ke Draft" button when there are unsent drafts and we're not already on draft page
+  const hasPendingDraft = state.drafts?.length > 0 &&
+    state.drafts.some(d => !state.queue?.some(q => q.sponsor_name === d.sponsor_name && q.status === 'Sent'))
+  const isOnDraft = location.pathname.includes('/draft')
+  const showDraftBtn = hasPendingDraft && !isOnDraft
+
+  // Detect which flow the draft belongs to
+  const draftPath = state.manualSponsors?.some(s => state.selected?.includes(s.sponsor_name)) &&
+    !state.results?.some(r => state.selected?.includes(r.sponsor_name))
+    ? '/app/tambah-sponsor/draft'
+    : '/app/cari-sponsor/draft'
 
   return (
     <>
@@ -69,6 +83,11 @@ export default function Shell() {
             <h1 className="sf-topbar-title">{title}</h1>
             <div className="sf-topbar-right">
               <span className="sf-demo-chip">Demo</span>
+              {showDraftBtn && (
+                <button className="sf-btn-draft" onClick={() => navigate(draftPath)}>
+                  ✉ Kembali ke Draft
+                </button>
+              )}
               <button className="sf-btn-primary" onClick={() => navigate('/app/cari-sponsor')}>
                 + Cari Sponsor
               </button>
@@ -242,6 +261,19 @@ const CSS = `
   transition: background 150ms;
 }
 .sf-btn-primary:hover { background: var(--brand-600, #5A48D6); }
+.sf-btn-draft {
+  padding: 7px 14px;
+  background: var(--surface, #fff);
+  color: var(--brand-500, #6D5AE6);
+  border: 1.5px solid var(--brand-400, #8B7BF0);
+  border-radius: 9999px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  transition: background 150ms;
+}
+.sf-btn-draft:hover { background: var(--brand-50, #F6F4FF); }
 
 /* ── Content ── */
 .sf-content {

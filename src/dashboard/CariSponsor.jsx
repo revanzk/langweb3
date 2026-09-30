@@ -1,47 +1,132 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/store.jsx'
+import { validateCampaign } from '../lib/validators.js'
+import { RELEVANCE_LEVEL_LIST, TONE_OPTIONS } from '../lib/constants.js'
 import DebugPanel from '../components/DebugPanel.jsx'
 
 const CATATAN_MIN = 30
 const CATATAN_MAX = 2000
 
+const LEVEL_COLORS = {
+  'Sangat Relevan': { bg: '#e3f6ee', color: '#12805c' },
+  'Relevan': { bg: '#e8f0fe', color: '#1c64f2' },
+  'Cukup Relevan': { bg: '#fdf1dc', color: '#b45309' },
+  'Kurang Relevan': { bg: 'var(--surface-muted)', color: 'var(--text-3)' },
+  'Manual': { bg: 'var(--brand-100)', color: 'var(--brand-500)' },
+}
+
 export default function CariSponsor() {
-  const { state, runSearch, dispatch } = useStore()
+  const { state, runSearch, dispatch, allSponsors, selectedSponsors, toggleSelected } = useStore()
   const navigate = useNavigate()
 
-  const [form, setForm] = useState({
+  const hasResults = state.results.length > 0
+  const hasSelection = state.selected.length > 0
+
+  // ── Search form ─────────────────────────────────────────────────────────────
+  const [searchForm, setSearchForm] = useState({
     jenisEvent: state.search.jenisEvent || '',
     perkiraanPeserta: state.search.perkiraanPeserta || '',
     catatanEvent: state.search.catatanEvent || '',
   })
-  const [errors, setErrors] = useState({})
+  const [searchErrors, setSearchErrors] = useState({})
   const [showDebug, setShowDebug] = useState(false)
-
   const isSearching = state.searchPhase === 'searching' || state.searchPhase === 'waiting'
 
-  function handleChange(e) {
+  // ── Hasil filters ───────────────────────────────────────────────────────────
+  const [filter, setFilter] = useState('Semua')
+  const [sort, setSort] = useState('score_desc')
+  const [view, setView] = useState(() => localStorage.getItem('sf_view') || 'card')
+
+  // ── Campaign form ───────────────────────────────────────────────────────────
+  const cam = state.campaign
+  const [campForm, setCampForm] = useState({
+    namaEvent: cam.namaEvent || '',
+    tanggalEvent: cam.tanggalEvent || '',
+    lokasiEvent: cam.lokasiEvent || '',
+    penyelenggara: cam.penyelenggara || '',
+    kebutuhanSponsorship: cam.kebutuhanSponsorship || '',
+    toneEmail: cam.toneEmail || 'Formal',
+    informasiTambahan: cam.informasiTambahan || '',
+    namaPIC: cam.namaPIC || '',
+    kontakPIC: cam.kontakPIC || '',
+    emailPIC: cam.emailPIC || '',
+    websiteAcara: cam.websiteAcara || '',
+    linkProposal: cam.linkProposal || '',
+    deadlineRespons: cam.deadlineRespons || '',
+    jenisEvent: cam.jenisEvent || state.search.jenisEvent || '',
+    perkiraanPeserta: cam.perkiraanPeserta || state.search.perkiraanPeserta || '',
+    catatanEvent: cam.catatanEvent || state.search.catatanEvent || '',
+  })
+  const [campErrors, setCampErrors] = useState({})
+
+  // Sync shared fields when results arrive
+  useEffect(() => {
+    if (hasResults) {
+      setCampForm(f => ({
+        ...f,
+        jenisEvent: f.jenisEvent || state.search.jenisEvent || '',
+        perkiraanPeserta: f.perkiraanPeserta || state.search.perkiraanPeserta || '',
+        catatanEvent: f.catatanEvent || state.search.catatanEvent || '',
+      }))
+    }
+  }, [hasResults])
+
+  // ── Scroll refs ─────────────────────────────────────────────────────────────
+  const hasilRef = useRef(null)
+  const kampanyeRef = useRef(null)
+
+  // ── Search handlers ─────────────────────────────────────────────────────────
+  function handleSearchChange(e) {
     const { name, value } = e.target
-    setForm(f => ({ ...f, [name]: value }))
-    if (errors[name]) setErrors(e => ({ ...e, [name]: null }))
+    setSearchForm(f => ({ ...f, [name]: value }))
+    if (searchErrors[name]) setSearchErrors(err => ({ ...err, [name]: null }))
   }
 
-  async function handleSubmit(e) {
+  async function handleSearch(e) {
     e.preventDefault()
-    // Sync form to store
-    dispatch({ type: 'SET_SEARCH', payload: form })
-    const result = await runSearch()
+    // Pass form directly — dispatch is async so state.search won't be updated yet
+    const result = await runSearch(searchForm)
     if (!result) return
-    if (!result.valid) {
-      setErrors(result.errors)
-      return
-    }
-    if (result.ok) {
-      navigate('/app/cari-sponsor/hasil')
-    } else {
-      setShowDebug(true)
-    }
+    if (!result.valid) { setSearchErrors(result.errors); return }
+    // Persist to store after successful validation
+    dispatch({ type: 'SET_SEARCH', payload: searchForm })
+    if (!result.ok) { setShowDebug(true); return }
+    setTimeout(() => hasilRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
   }
+
+  function switchView(v) {
+    setView(v)
+    localStorage.setItem('sf_view', v)
+  }
+
+  // ── Campaign handlers ───────────────────────────────────────────────────────
+  function handleCampChange(e) {
+    const { name, value } = e.target
+    setCampForm(f => ({ ...f, [name]: value }))
+    if (campErrors[name]) setCampErrors(err => ({ ...err, [name]: null }))
+  }
+
+  function handleGenerateDraft(e) {
+    e.preventDefault()
+    const { valid, errors } = validateCampaign(campForm)
+    if (!valid) { setCampErrors(errors); return }
+    dispatch({ type: 'SET_CAMPAIGN', payload: campForm })
+    navigate('/app/cari-sponsor/draft')
+  }
+
+  // ── Hasil display logic — hanya hasil AI, manual tidak muncul di sini ───────
+  const filters = ['Semua', ...RELEVANCE_LEVEL_LIST]
+  const filtered = state.results.filter(sp => {
+    if (filter === 'Semua') return true
+    return sp.relevance_level === filter
+  })
+  const sorted = [...filtered].sort((a, b) => {
+    if (sort === 'score_desc') return (b.relevance_score ?? -1) - (a.relevance_score ?? -1)
+    if (sort === 'score_asc') return (a.relevance_score ?? 101) - (b.relevance_score ?? 101)
+    return a.sponsor_name.localeCompare(b.sponsor_name)
+  })
+  const display = sorted
 
   const phaseLabel = state.searchPhase === 'searching'
     ? 'Menghubungi AI...'
@@ -51,107 +136,260 @@ export default function CariSponsor() {
 
   return (
     <div style={s.root}>
-      {/* Stepper */}
-      <Stepper active={0} steps={['Cari', 'Hasil', 'Kampanye', 'Draft']} />
 
-      <div style={s.layout}>
-        {/* Form */}
-        <form onSubmit={handleSubmit} style={s.card} noValidate>
-          <h2 style={s.cardTitle}>Informasi Event</h2>
-          <p style={s.cardSub}>Deskripsikan event kamu agar AI bisa menemukan sponsor yang paling relevan.</p>
+      {/* ══ SEKSI 1: Form Pencarian ══ */}
+      <div style={s.section}>
+        <div style={s.sectionHeader}>
+          <div style={s.sectionNum}>1</div>
+          <h2 style={s.sectionTitle}>Cari Sponsor</h2>
+          {hasResults && <span style={s.sectionBadge}>✓ {allSponsors.length} sponsor ditemukan</span>}
+        </div>
 
-          <Field
-            label="Jenis Event *"
-            error={errors.jenisEvent}
-          >
-            <input
-              name="jenisEvent"
-              value={form.jenisEvent}
-              onChange={handleChange}
-              placeholder="cth. Hackathon teknologi, Konser musik indie, Seminar nasional..."
-              style={{ ...s.input, ...(errors.jenisEvent ? s.inputErr : {}) }}
-              disabled={isSearching}
-            />
-          </Field>
-
-          <Field
-            label="Perkiraan Peserta *"
-            error={errors.perkiraanPeserta}
-          >
-            <input
-              name="perkiraanPeserta"
-              value={form.perkiraanPeserta}
-              onChange={handleChange}
-              placeholder="cth. 500"
-              inputMode="numeric"
-              style={{ ...s.input, ...(errors.perkiraanPeserta ? s.inputErr : {}) }}
-              disabled={isSearching}
-            />
-          </Field>
-
-          <Field
-            label="Catatan Event *"
-            error={errors.catatanEvent}
-            hint={`${form.catatanEvent.length} / ${CATATAN_MAX} karakter (min ${CATATAN_MIN})`}
-          >
-            <textarea
-              name="catatanEvent"
-              value={form.catatanEvent}
-              onChange={handleChange}
-              placeholder="Ceritakan detail event: tema, tujuan, target audiens, kebutuhan sponsor, dll..."
-              rows={6}
-              maxLength={CATATAN_MAX}
-              style={{ ...s.input, ...s.textarea, ...(errors.catatanEvent ? s.inputErr : {}) }}
-              disabled={isSearching}
-            />
+        <form onSubmit={handleSearch} noValidate>
+          <div style={s.formGrid}>
+            <Field label="Jenis Event *" error={searchErrors.jenisEvent}>
+              <input name="jenisEvent" value={searchForm.jenisEvent} onChange={handleSearchChange}
+                disabled={isSearching}
+                placeholder="cth. Hackathon teknologi, Seminar nasional..."
+                style={{ ...s.input, ...(searchErrors.jenisEvent ? s.inputErr : {}) }} />
+            </Field>
+            <Field label="Perkiraan Peserta *" error={searchErrors.perkiraanPeserta}>
+              <input name="perkiraanPeserta" value={searchForm.perkiraanPeserta} onChange={handleSearchChange}
+                disabled={isSearching} placeholder="cth. 500" inputMode="numeric"
+                style={{ ...s.input, ...(searchErrors.perkiraanPeserta ? s.inputErr : {}) }} />
+            </Field>
+          </div>
+          <Field label="Catatan Event *" error={searchErrors.catatanEvent}
+            hint={`${searchForm.catatanEvent.length} / ${CATATAN_MAX} karakter (min ${CATATAN_MIN})`}>
+            <textarea name="catatanEvent" value={searchForm.catatanEvent} onChange={handleSearchChange}
+              disabled={isSearching} rows={4} maxLength={CATATAN_MAX}
+              placeholder="Ceritakan detail event: tema, tujuan, target audiens, kebutuhan sponsor, lokasi, dll..."
+              style={{ ...s.input, ...s.textarea, ...(searchErrors.catatanEvent ? s.inputErr : {}) }} />
           </Field>
 
           {state.searchPhase === 'error' && (
             <div style={s.errorBanner}>
-              <span>⚠ {state.searchError}</span>
+              ⚠ {state.searchError}
               <button type="button" style={s.linkBtn} onClick={() => setShowDebug(v => !v)}>
                 {showDebug ? 'Sembunyikan Debug' : 'Lihat Debug'}
               </button>
             </div>
           )}
-
           {phaseLabel && (
-            <div style={s.phaseBanner}>
-              <span style={s.spinner} />
-              {phaseLabel}
-            </div>
+            <div style={s.phaseBanner}><span style={s.spinner} />{phaseLabel}</div>
           )}
 
-          <div style={s.actions}>
+          <div style={s.searchActions}>
             <button type="submit" style={s.btnPrimary} disabled={isSearching}>
-              {isSearching ? 'Mencari...' : 'Cari Sponsor →'}
+              {isSearching ? 'Mencari...' : hasResults ? '↺ Cari Ulang' : 'Cari Sponsor →'}
             </button>
           </div>
         </form>
 
-        {/* Tips aside */}
-        <aside style={s.aside}>
-          <h3 style={s.asideTitle}>💡 Tips</h3>
-          <ul style={s.tipsList}>
-            <li>Sertakan jenis event dan target audiens yang jelas.</li>
-            <li>Sebutkan kota/lokasi penyelenggaraan jika ada.</li>
-            <li>Jelaskan kebutuhan sponsorship: tunai, produk, promosi?</li>
-            <li>AI akan menemukan maks. 5 sponsor paling relevan.</li>
-            <li>Kamu bisa tambah sponsor manual di halaman Tambah Sponsor.</li>
-          </ul>
-        </aside>
+        {showDebug && state.lastRun && (
+          <DebugPanel data={state.lastRun} onClose={() => setShowDebug(false)} />
+        )}
       </div>
 
-      {showDebug && state.lastRun && (
-        <DebugPanel data={state.lastRun} onClose={() => setShowDebug(false)} />
+      {/* ══ SEKSI 2: Hasil & Pilih Sponsor ══ */}
+      {hasResults && (
+        <div style={s.section} ref={hasilRef}>
+          <div style={s.sectionHeader}>
+            <div style={s.sectionNum}>2</div>
+            <h2 style={s.sectionTitle}>Pilih Sponsor</h2>
+            <span style={s.sectionSub}>{state.selected.length} dipilih</span>
+          </div>
+
+          {state.summary && (
+            <div style={s.summaryBanner}>
+              <span style={s.summaryLabel}>Ringkasan AI:</span> {state.summary}
+            </div>
+          )}
+
+          {/* Toolbar */}
+          <div style={s.toolbar}>
+            <div style={s.filterRow}>
+              {filters.map(f => (
+                <button key={f}
+                  style={{ ...s.filterChip, ...(filter === f ? s.filterChipActive : {}) }}
+                  onClick={() => setFilter(f)}>{f}
+                </button>
+              ))}
+            </div>
+            <div style={s.toolbarRight}>
+              <select value={sort} onChange={e => setSort(e.target.value)} style={s.select}>
+                <option value="score_desc">Skor Tertinggi</option>
+                <option value="score_asc">Skor Terendah</option>
+                <option value="name_asc">Nama A–Z</option>
+              </select>
+              <button style={{ ...s.viewBtn, ...(view === 'card' ? s.viewBtnActive : {}) }} onClick={() => switchView('card')}>▦ Kartu</button>
+              <button style={{ ...s.viewBtn, ...(view === 'list' ? s.viewBtnActive : {}) }} onClick={() => switchView('list')}>☰ Daftar</button>
+            </div>
+          </div>
+
+          {view === 'card' && (
+            <div style={s.grid}>
+              {display.map(sp => (
+                <SponsorCard key={sp.sponsor_name} sponsor={sp}
+                  selected={state.selected.includes(sp.sponsor_name)}
+                  onToggle={() => toggleSelected(sp.sponsor_name)} />
+              ))}
+            </div>
+          )}
+          {view === 'list' && (
+            <div style={s.listContainer}>
+              {display.map(sp => (
+                <SponsorRow key={sp.sponsor_name} sponsor={sp}
+                  selected={state.selected.includes(sp.sponsor_name)}
+                  onToggle={() => toggleSelected(sp.sponsor_name)} />
+              ))}
+            </div>
+          )}
+
+          {hasSelection && (
+            <div style={s.selectionBar}>
+              <span style={s.selectionText}>✓ {state.selected.length} sponsor dipilih</span>
+              <button style={s.btnPrimary}
+                onClick={() => setTimeout(() => kampanyeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)}>
+                Isi Detail Kampanye ↓
+              </button>
+            </div>
+          )}
+        </div>
       )}
+
+      {/* ══ SEKSI 3: Detail Kampanye ══ */}
+      {hasSelection && (
+        <div style={s.section} ref={kampanyeRef}>
+          <div style={s.sectionHeader}>
+            <div style={s.sectionNum}>3</div>
+            <h2 style={s.sectionTitle}>Detail Kampanye</h2>
+          </div>
+
+          <div style={s.selectedChips}>
+            {selectedSponsors.map(sp => (
+              <span key={sp.sponsor_name} style={s.chip}>{sp.sponsor_name}</span>
+            ))}
+          </div>
+
+          <form onSubmit={handleGenerateDraft} noValidate>
+            <Block title="Konteks Event">
+              <div style={s.formGrid}>
+                <Field label="Jenis Event *" error={campErrors.jenisEvent}>
+                  <input name="jenisEvent" value={campForm.jenisEvent} onChange={handleCampChange}
+                    style={{ ...s.input, ...(campErrors.jenisEvent ? s.inputErr : {}) }} />
+                </Field>
+                <Field label="Perkiraan Peserta *" error={campErrors.perkiraanPeserta}>
+                  <input name="perkiraanPeserta" value={campForm.perkiraanPeserta} onChange={handleCampChange}
+                    inputMode="numeric"
+                    style={{ ...s.input, ...(campErrors.perkiraanPeserta ? s.inputErr : {}) }} />
+                </Field>
+              </div>
+              <Field label="Catatan Event *" error={campErrors.catatanEvent}>
+                <textarea name="catatanEvent" value={campForm.catatanEvent} onChange={handleCampChange}
+                  rows={3} style={{ ...s.input, ...s.textarea, ...(campErrors.catatanEvent ? s.inputErr : {}) }} />
+              </Field>
+            </Block>
+
+            <Block title="Detail Event">
+              <div style={s.formGrid}>
+                <Field label="Nama Event *" error={campErrors.namaEvent}>
+                  <input name="namaEvent" value={campForm.namaEvent} onChange={handleCampChange}
+                    style={{ ...s.input, ...(campErrors.namaEvent ? s.inputErr : {}) }} />
+                </Field>
+                <Field label="Tanggal Event *" error={campErrors.tanggalEvent}>
+                  <input type="date" name="tanggalEvent" value={campForm.tanggalEvent} onChange={handleCampChange}
+                    style={{ ...s.input, ...(campErrors.tanggalEvent ? s.inputErr : {}) }} />
+                </Field>
+                <Field label="Lokasi Event *" error={campErrors.lokasiEvent}>
+                  <input name="lokasiEvent" value={campForm.lokasiEvent} onChange={handleCampChange}
+                    style={{ ...s.input, ...(campErrors.lokasiEvent ? s.inputErr : {}) }} />
+                </Field>
+                <Field label="Penyelenggara *" error={campErrors.penyelenggara}>
+                  <input name="penyelenggara" value={campForm.penyelenggara} onChange={handleCampChange}
+                    style={{ ...s.input, ...(campErrors.penyelenggara ? s.inputErr : {}) }} />
+                </Field>
+              </div>
+              <Field label="Kebutuhan Sponsorship *" error={campErrors.kebutuhanSponsorship}>
+                <textarea name="kebutuhanSponsorship" value={campForm.kebutuhanSponsorship} onChange={handleCampChange}
+                  rows={3} style={{ ...s.input, ...s.textarea, ...(campErrors.kebutuhanSponsorship ? s.inputErr : {}) }} />
+              </Field>
+              <div style={s.formGrid}>
+                <Field label="Deadline Respons">
+                  <input type="date" name="deadlineRespons" value={campForm.deadlineRespons} onChange={handleCampChange} style={s.input} />
+                </Field>
+                <Field label="Informasi Tambahan">
+                  <input name="informasiTambahan" value={campForm.informasiTambahan} onChange={handleCampChange} style={s.input} />
+                </Field>
+              </div>
+            </Block>
+
+            <Block title="Penanggung Jawab (PIC)">
+              <div style={s.formGrid}>
+                <Field label="Nama PIC *" error={campErrors.namaPIC}>
+                  <input name="namaPIC" value={campForm.namaPIC} onChange={handleCampChange}
+                    style={{ ...s.input, ...(campErrors.namaPIC ? s.inputErr : {}) }} />
+                </Field>
+                <Field label="Kontak PIC *" error={campErrors.kontakPIC}>
+                  <input name="kontakPIC" value={campForm.kontakPIC} onChange={handleCampChange}
+                    placeholder="+62..."
+                    style={{ ...s.input, ...(campErrors.kontakPIC ? s.inputErr : {}) }} />
+                </Field>
+                <Field label="Email PIC *" error={campErrors.emailPIC}>
+                  <input type="email" name="emailPIC" value={campForm.emailPIC} onChange={handleCampChange}
+                    style={{ ...s.input, ...(campErrors.emailPIC ? s.inputErr : {}) }} />
+                </Field>
+                <Field label="Website Acara" error={campErrors.websiteAcara}>
+                  <input name="websiteAcara" value={campForm.websiteAcara} onChange={handleCampChange}
+                    placeholder="https://..."
+                    style={{ ...s.input, ...(campErrors.websiteAcara ? s.inputErr : {}) }} />
+                </Field>
+                <Field label="Link Proposal" error={campErrors.linkProposal}>
+                  <input name="linkProposal" value={campForm.linkProposal} onChange={handleCampChange}
+                    placeholder="https://..."
+                    style={{ ...s.input, ...(campErrors.linkProposal ? s.inputErr : {}) }} />
+                </Field>
+              </div>
+            </Block>
+
+            <Block title="Tone Email">
+              <div style={s.toneRow}>
+                {TONE_OPTIONS.map(t => (
+                  <label key={t} style={s.toneLabel}>
+                    <input type="radio" name="toneEmail" value={t}
+                      checked={campForm.toneEmail === t} onChange={handleCampChange}
+                      style={{ accentColor: 'var(--brand-500)' }} />
+                    {t}
+                  </label>
+                ))}
+              </div>
+            </Block>
+
+            <div style={s.campActions}>
+              <button type="submit" style={s.btnPrimaryLg}>
+                ✉ Generate Draft Email →
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+function Block({ title, children }) {
+  return (
+    <div style={bc.block}>
+      <p style={bc.title}>{title}</p>
+      {children}
     </div>
   )
 }
 
 function Field({ label, error, hint, children }) {
   return (
-    <div style={{ marginBottom: 20 }}>
+    <div style={{ marginBottom: 16 }}>
       <label style={s.label}>{label}</label>
       {children}
       {hint && !error && <p style={s.hint}>{hint}</p>}
@@ -160,99 +398,226 @@ function Field({ label, error, hint, children }) {
   )
 }
 
-function Stepper({ active, steps }) {
+function SponsorCard({ sponsor, selected, onToggle }) {
+  const [expanded, setExpanded] = useState(false)
+  const isManual = sponsor.source === 'manual'
+  const lc = isManual ? LEVEL_COLORS.Manual : (LEVEL_COLORS[sponsor.relevance_level] || LEVEL_COLORS['Kurang Relevan'])
+  const score = isManual ? '–/100' : `${sponsor.relevance_score}/100`
+
   return (
-    <div style={s.stepper}>
-      {steps.map((step, i) => (
-        <div key={step} style={s.stepItem}>
-          <div style={{
-            ...s.stepCircle,
-            ...(i === active ? s.stepActive : i < active ? s.stepDone : {}),
-          }}>
-            {i < active ? '✓' : i + 1}
+    <div style={{ ...s.card, ...(selected ? s.cardSelected : {}) }}>
+      <div style={s.cardHeader}>
+        <input type="checkbox" checked={selected} onChange={onToggle} style={s.checkbox} />
+        <div style={s.avatar}>{sponsor.sponsor_name[0].toUpperCase()}</div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={s.sponsorName}>{sponsor.sponsor_name}</div>
+          <div style={s.sponsorMeta}>
+            {sponsor.industry && <span style={s.metaItem}>{sponsor.industry}</span>}
+            {sponsor.location && <span style={s.metaItem}>📍 {sponsor.location}</span>}
           </div>
-          <span style={{ ...s.stepLabel, ...(i === active ? { color: 'var(--brand-500)' } : {}) }}>
-            {step}
-          </span>
-          {i < steps.length - 1 && <div style={s.stepLine} />}
         </div>
-      ))}
+        <div style={s.scoreBox}>
+          <span style={s.scoreNum}>{score}</span>
+          <span style={{ ...s.levelChip, background: lc.bg, color: lc.color }}>
+            {isManual ? 'Manual' : sponsor.relevance_level}
+          </span>
+        </div>
+      </div>
+      {!isManual && sponsor.reason?.length > 0 && (
+        <div style={s.reasons}>
+          {(expanded ? sponsor.reason : sponsor.reason.slice(0, 3)).map((r, i) => (
+            <div key={i} style={s.reason}>• {r}</div>
+          ))}
+          {sponsor.reason.length > 3 && (
+            <button style={s.expandBtn} onClick={() => setExpanded(e => !e)}>
+              {expanded ? 'Sembunyikan ▲' : `+${sponsor.reason.length - 3} lainnya ▼`}
+            </button>
+          )}
+        </div>
+      )}
+      <div style={s.support}>
+        {sponsor.support_type?.length > 0
+          ? sponsor.support_type.map((t, i) => <span key={i} style={s.supportChip}>{t}</span>)
+          : <span style={s.noData}>tidak diketahui</span>}
+      </div>
+      {(sponsor.contact_email || sponsor.website) && (
+        <div style={s.contactRow}>
+          {sponsor.contact_email && <a href={`mailto:${sponsor.contact_email}`} style={s.contactLink}>{sponsor.contact_email}</a>}
+          {sponsor.website && <a href={sponsor.website} target="_blank" rel="noopener noreferrer" style={s.contactLink}>🔗 Website</a>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SponsorRow({ sponsor, selected, onToggle }) {
+  const isManual = sponsor.source === 'manual'
+  const lc = isManual ? LEVEL_COLORS.Manual : (LEVEL_COLORS[sponsor.relevance_level] || LEVEL_COLORS['Kurang Relevan'])
+  return (
+    <div style={{ ...s.listRow, ...(selected ? s.listRowSelected : {}) }}>
+      <input type="checkbox" checked={selected} onChange={onToggle} style={s.checkbox} />
+      <div style={s.rowAvatar}>{sponsor.sponsor_name[0].toUpperCase()}</div>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {sponsor.sponsor_name}
+      </span>
+      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', flexShrink: 0 }}>
+        {isManual ? '–' : sponsor.relevance_score}
+      </span>
+      <span style={{ ...s.levelChip, background: lc.bg, color: lc.color, flexShrink: 0 }}>
+        {isManual ? 'Manual' : sponsor.relevance_level}
+      </span>
     </div>
   )
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const s = {
-  root: { maxWidth: 900, margin: '0 auto' },
-  layout: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 260px', gap: 24, marginTop: 24 },
-  card: {
-    background: 'var(--surface)',
-    border: '1px solid var(--border-subtle)',
-    borderRadius: 12,
-    padding: 28,
+  root: { maxWidth: 920, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20, paddingBottom: 40 },
+
+  section: {
+    background: 'var(--surface)', border: '1px solid var(--border-subtle)',
+    borderRadius: 16, padding: 28,
   },
-  cardTitle: { fontSize: 18, fontWeight: 700, color: 'var(--text-1)', marginBottom: 6 },
-  cardSub: { fontSize: 13, color: 'var(--text-3)', marginBottom: 24 },
-  label: { display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-2)', marginBottom: 6 },
+  sectionHeader: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 },
+  sectionNum: {
+    width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+    background: 'var(--brand-500)', color: '#fff',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 13, fontWeight: 700,
+  },
+  sectionTitle: { fontSize: 17, fontWeight: 700, color: 'var(--text-1)', margin: 0, flex: 1 },
+  sectionBadge: { fontSize: 12, fontWeight: 600, color: 'var(--state-success)', background: 'var(--state-success-bg)', padding: '3px 10px', borderRadius: 9999 },
+  sectionSub: { fontSize: 13, color: 'var(--brand-500)', fontWeight: 600 },
+
+  formGrid: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: '0 20px' },
+  label: { display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-2)', marginBottom: 5 },
   input: {
-    width: '100%', padding: '10px 12px', fontSize: 15,
+    width: '100%', padding: '9px 12px', fontSize: 15,
     border: '1px solid var(--border-strong)', borderRadius: 8,
     outline: 'none', background: '#fff', color: 'var(--text-1)',
     transition: 'border-color 150ms',
   },
   inputErr: { borderColor: 'var(--state-danger)' },
-  textarea: { resize: 'vertical', minHeight: 120 },
-  hint: { fontSize: 12, color: 'var(--text-3)', marginTop: 4 },
-  errText: { fontSize: 12, color: 'var(--state-danger)', marginTop: 4 },
+  textarea: { resize: 'vertical' },
+  hint: { fontSize: 12, color: 'var(--text-3)', marginTop: 3 },
+  errText: { fontSize: 12, color: 'var(--state-danger)', marginTop: 3 },
+
   errorBanner: {
-    display: 'flex', alignItems: 'center', gap: 12,
+    display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
     background: 'var(--state-danger-bg)', color: 'var(--state-danger)',
     border: '1px solid #f5c6c5', borderRadius: 8,
-    padding: '10px 14px', fontSize: 13, marginBottom: 16,
+    padding: '10px 14px', fontSize: 13, marginBottom: 12,
   },
   phaseBanner: {
     display: 'flex', alignItems: 'center', gap: 10,
     background: 'var(--brand-50)', color: 'var(--brand-500)',
     border: '1px solid var(--brand-200)', borderRadius: 8,
-    padding: '10px 14px', fontSize: 13, marginBottom: 16,
+    padding: '10px 14px', fontSize: 13, marginBottom: 12,
   },
   spinner: {
-    width: 14, height: 14,
-    border: '2px solid var(--brand-200)',
-    borderTopColor: 'var(--brand-500)',
-    borderRadius: '50%',
-    display: 'inline-block',
+    width: 14, height: 14, borderRadius: '50%', display: 'inline-block', flexShrink: 0,
+    border: '2px solid var(--brand-200)', borderTopColor: 'var(--brand-500)',
     animation: 'spin 0.8s linear infinite',
   },
-  actions: { display: 'flex', justifyContent: 'flex-end', marginTop: 8 },
+  searchActions: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12, marginTop: 8 },
+  linkBtn: { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--state-danger)', textDecoration: 'underline', fontSize: 12, padding: 0 },
   btnPrimary: {
-    padding: '10px 28px',
-    background: 'var(--brand-500)', color: '#fff',
-    border: 'none', borderRadius: 9999,
-    cursor: 'pointer', fontSize: 14, fontWeight: 600,
-    opacity: 1, transition: 'opacity 150ms',
+    padding: '10px 24px', background: 'var(--brand-500)', color: '#fff',
+    border: 'none', borderRadius: 9999, cursor: 'pointer', fontSize: 14, fontWeight: 600,
   },
-  linkBtn: {
-    background: 'none', border: 'none', cursor: 'pointer',
-    color: 'var(--state-danger)', textDecoration: 'underline', fontSize: 12, padding: 0,
+  btnPrimaryLg: {
+    padding: '12px 32px', background: 'var(--brand-500)', color: '#fff',
+    border: 'none', borderRadius: 9999, cursor: 'pointer', fontSize: 15, fontWeight: 700,
   },
-  aside: {
-    background: 'var(--surface)', border: '1px solid var(--border-subtle)',
-    borderRadius: 12, padding: 20, alignSelf: 'start',
+
+  summaryBanner: {
+    background: 'var(--brand-50)', border: '1px solid var(--brand-200)',
+    borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--text-2)', marginBottom: 14,
   },
-  asideTitle: { fontSize: 14, fontWeight: 700, color: 'var(--text-1)', marginBottom: 12 },
-  tipsList: { paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, color: 'var(--text-2)' },
-  stepper: { display: 'flex', alignItems: 'center', gap: 0 },
-  stepItem: { display: 'flex', alignItems: 'center', gap: 8 },
-  stepCircle: {
-    width: 28, height: 28, borderRadius: '50%',
-    background: 'var(--surface-muted)', color: 'var(--text-3)',
-    fontSize: 12, fontWeight: 700,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    border: '2px solid var(--border-subtle)',
+  summaryLabel: { fontWeight: 600, color: 'var(--brand-500)' },
+  toolbar: {
+    display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8,
+    marginBottom: 16, padding: '10px 14px',
+    background: 'var(--page)', border: '1px solid var(--border-subtle)', borderRadius: 10,
   },
-  stepActive: { background: 'var(--brand-500)', color: '#fff', borderColor: 'var(--brand-500)' },
-  stepDone: { background: 'var(--state-success-bg)', color: 'var(--state-success)', borderColor: 'var(--state-success)' },
-  stepLabel: { fontSize: 13, color: 'var(--text-3)', fontWeight: 500 },
-  stepLine: { width: 32, height: 2, background: 'var(--border-subtle)', margin: '0 4px' },
+  filterRow: { display: 'flex', flexWrap: 'wrap', gap: 6, flex: 1 },
+  filterChip: {
+    padding: '4px 12px', borderRadius: 9999, fontSize: 12, fontWeight: 500,
+    border: '1px solid var(--border-strong)', background: 'var(--surface)', color: 'var(--text-2)', cursor: 'pointer',
+  },
+  filterChipActive: { background: 'var(--brand-500)', color: '#fff', borderColor: 'var(--brand-500)' },
+  toolbarRight: { display: 'flex', alignItems: 'center', gap: 6 },
+  select: {
+    padding: '5px 10px', fontSize: 13, border: '1px solid var(--border-strong)',
+    borderRadius: 8, background: '#fff', color: 'var(--text-2)', cursor: 'pointer',
+  },
+  viewBtn: {
+    padding: '5px 10px', fontSize: 12, border: '1px solid var(--border-strong)',
+    borderRadius: 8, background: 'var(--surface)', color: 'var(--text-2)', cursor: 'pointer',
+  },
+  viewBtnActive: { background: 'var(--brand-50)', color: 'var(--brand-500)', borderColor: 'var(--brand-200)' },
+
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 },
+  listContainer: { display: 'flex', flexDirection: 'column', gap: 6 },
+
+  card: {
+    background: 'var(--page)', border: '1px solid var(--border-subtle)',
+    borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 10,
+  },
+  cardSelected: { borderColor: 'var(--brand-400)', boxShadow: '0 0 0 2px var(--brand-100)', background: '#fff' },
+  cardHeader: { display: 'flex', alignItems: 'flex-start', gap: 10 },
+  checkbox: { marginTop: 3, accentColor: 'var(--brand-500)', width: 16, height: 16, flexShrink: 0, cursor: 'pointer' },
+  avatar: {
+    width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+    background: 'var(--brand-100)', color: 'var(--brand-500)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14,
+  },
+  sponsorName: { fontSize: 14, fontWeight: 700, color: 'var(--text-1)', overflowWrap: 'anywhere' },
+  sponsorMeta: { display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 3 },
+  metaItem: { fontSize: 11, color: 'var(--text-3)' },
+  scoreBox: { marginLeft: 'auto', textAlign: 'right', flexShrink: 0 },
+  scoreNum: { display: 'block', fontSize: 15, fontWeight: 700, color: 'var(--text-1)' },
+  levelChip: { fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, display: 'inline-block' },
+  reasons: { display: 'flex', flexDirection: 'column', gap: 3 },
+  reason: { fontSize: 12, color: 'var(--text-2)' },
+  expandBtn: { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--brand-500)', fontSize: 11, padding: 0, marginTop: 2 },
+  support: { display: 'flex', flexWrap: 'wrap', gap: 5 },
+  supportChip: { fontSize: 11, padding: '2px 8px', borderRadius: 9999, background: 'var(--surface-muted)', color: 'var(--text-2)' },
+  noData: { fontSize: 11, color: 'var(--text-3)', fontStyle: 'italic' },
+  contactRow: { display: 'flex', gap: 10, flexWrap: 'wrap', borderTop: '1px dashed var(--border-subtle)', paddingTop: 8 },
+  contactLink: { fontSize: 11, color: 'var(--brand-500)', textDecoration: 'underline' },
+
+  listRow: {
+    display: 'flex', alignItems: 'center', gap: 12,
+    padding: '10px 14px', background: 'var(--page)',
+    border: '1px solid var(--border-subtle)', borderRadius: 8, minWidth: 0,
+  },
+  listRowSelected: { borderColor: 'var(--brand-400)', background: '#fff' },
+  rowAvatar: {
+    width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+    background: 'var(--brand-100)', color: 'var(--brand-500)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12,
+  },
+
+  selectionBar: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+    marginTop: 16, padding: '12px 16px',
+    background: 'var(--brand-50)', border: '1px solid var(--brand-200)', borderRadius: 10,
+  },
+  selectionText: { fontSize: 14, fontWeight: 600, color: 'var(--brand-600)' },
+
+  selectedChips: { display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 20 },
+  chip: { fontSize: 12, padding: '4px 12px', borderRadius: 9999, background: 'var(--brand-100)', color: 'var(--brand-600)', fontWeight: 500 },
+
+  toneRow: { display: 'flex', gap: 20 },
+  toneLabel: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer' },
+  campActions: { display: 'flex', justifyContent: 'flex-end', marginTop: 8 },
+}
+
+const bc = {
+  block: {
+    background: 'var(--page)', border: '1px solid var(--border-subtle)',
+    borderRadius: 10, padding: 20, marginBottom: 12,
+  },
+  title: { fontSize: 12, fontWeight: 700, color: 'var(--text-3)', marginBottom: 14, textTransform: 'uppercase', letterSpacing: '0.5px' },
 }

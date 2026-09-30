@@ -4,9 +4,14 @@ import { useStore } from '../store/store.jsx'
 import { DELIVERY } from '../lib/constants.js'
 import DebugPanel from '../components/DebugPanel.jsx'
 
+// Track which campaign+sponsors combo was last generated so we can detect "new"
+function makeDraftKey(campaign, selected) {
+  return [campaign?.namaEvent || '', ...selected].join('|')
+}
+
 export default function Draft() {
   const {
-    state, selectedSponsors,
+    state, dispatch, selectedSponsors,
     runDraft, regenerateDraft, remergeDrafts, updateDraft,
     enqueueDrafts, sendQueue, retryQueueItem,
     refreshComposio, linkComposio, pollComposioAccount,
@@ -16,11 +21,20 @@ export default function Draft() {
   const [editMode, setEditMode] = useState(false)
   const [showDebug, setShowDebug] = useState(false)
   const pollRef = useRef(null)
+  const didGenerate = useRef(false)
 
-  // Auto-generate on mount
+  // Auto-generate on mount — always regenerate when campaign/selection changed
   useEffect(() => {
-    if (state.draftPhase === 'idle' && selectedSponsors.length > 0) {
-      runDraft()
+    if (!didGenerate.current && selectedSponsors.length > 0) {
+      didGenerate.current = true
+      const currentKey = makeDraftKey(state.campaign, state.selected)
+      const lastKey = state.lastDraftKey || ''
+      if (currentKey !== lastKey || state.drafts.length === 0) {
+        // New campaign or new selection — clear old drafts and regenerate
+        dispatch({ type: 'SET_DRAFT_PHASE', payload: 'idle' })
+        dispatch({ type: 'SET_DRAFTS', drafts: [] })
+        runDraft(currentKey)
+      }
     }
   }, [])
 
@@ -37,8 +51,9 @@ export default function Draft() {
   }, [state.composio.status])
 
   const isGenerating = state.draftPhase === 'generating'
-  const drafts = state.drafts
-  const draft = drafts[activeTab]
+  const drafts = state.drafts || []
+  const safeTab = drafts.length > 0 ? Math.min(activeTab, drafts.length - 1) : 0
+  const draft = drafts[safeTab]
 
   function renderBodyWithHighlights(body) {
     if (!body) return null
@@ -61,7 +76,7 @@ export default function Draft() {
           {drafts.map((d, i) => (
             <button
               key={d.sponsor_name}
-              style={{ ...s.tab, ...(i === activeTab ? s.tabActive : {}) }}
+              style={{ ...s.tab, ...(i === safeTab ? s.tabActive : {}) }}
               onClick={() => { setActiveTab(i); setEditMode(false) }}
             >
               {d.sponsor_name}

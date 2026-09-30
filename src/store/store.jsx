@@ -33,6 +33,7 @@ const INITIAL_STATE = {
   drafts: [],          // [{ sponsor_name, to, subject, body, edited, leftovers[] }]
   draftPhase: 'idle',  // idle | generating | done | error
   draftError: null,
+  lastDraftKey: '',    // tracks which campaign+selection combo was last generated
   // Composio
   composio: { status: 'idle', accountId: null, accountEmail: null, linkUrl: null, error: null },
   // Send queue
@@ -86,7 +87,7 @@ function reducer(state, action) {
       return { ...state, draftPhase: action.payload, draftError: action.error || null }
 
     case 'SET_DRAFTS':
-      return { ...state, drafts: action.drafts, draftPhase: 'done' }
+      return { ...state, drafts: action.drafts, draftPhase: action.drafts.length > 0 ? 'done' : 'idle', lastDraftKey: action.key || state.lastDraftKey }
 
     case 'UPDATE_DRAFT': {
       const drafts = state.drafts.map(d =>
@@ -248,14 +249,16 @@ export function StoreProvider({ children }) {
   }
 
   // ── Actions ─────────────────────────────────────────────────────────────────
-  async function runSearch() {
-    const { valid, errors } = validateSearch(state.search)
+  async function runSearch(searchData) {
+    // Accept searchData directly — caller dispatch hasn't settled yet when this runs
+    const data = searchData || state.search
+    const { valid, errors } = validateSearch(data)
     if (!valid) return { valid: false, errors }
 
     dispatch({ type: 'SET_SEARCH_PHASE', payload: 'searching' })
     const phaseTimer = setTimeout(() => dispatch({ type: 'SET_SEARCH_PHASE', payload: 'waiting' }), 4000)
 
-    const inputValue = buildSearchInput(state.search)
+    const inputValue = buildSearchInput(data)
     const startMs = Date.now()
     const result = await runFlow(FLOW_SEARCH, inputValue)
     clearTimeout(phaseTimer)
@@ -294,13 +297,11 @@ export function StoreProvider({ children }) {
     return { valid: true, ok: true }
   }
 
-  async function runDraft() {
+  async function runDraft(draftKey) {
     if (selectedSponsors.length === 0) return
 
     dispatch({ type: 'SET_DRAFT_PHASE', payload: 'generating' })
 
-    // Build one AI call for the batch using first sponsor context (or iterate)
-    // Per spec: 1 AI call + merge per sponsor
     const drafts = []
     for (const sponsor of selectedSponsors) {
       const inputValue = buildDraftInput(state.campaign, sponsor)
@@ -326,7 +327,7 @@ export function StoreProvider({ children }) {
       })
     }
 
-    dispatch({ type: 'SET_DRAFTS', drafts })
+    dispatch({ type: 'SET_DRAFTS', drafts, key: draftKey || '' })
   }
 
   async function regenerateDraft(sponsorName) {

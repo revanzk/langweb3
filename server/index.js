@@ -7,28 +7,25 @@ const app = express()
 const PORT = process.env.COMPOSIO_PORT || 5000
 
 app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'http://localhost:5000',
-    'http://localhost:7860',
-  ],
+  origin: ['http://localhost:5173', 'http://localhost:5000', 'http://localhost:7860'],
 }))
 app.use(express.json())
 
-// ── Health ───────────────────────────────────────────────────────────────────
+// ── Health ────────────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, composioKey: !!process.env.COMPOSIO_API_KEY })
 })
 
-// ── Composio: list Gmail accounts ────────────────────────────────────────────
+// ── Composio: list Gmail accounts ─────────────────────────────────────────────
 app.get('/api/composio/accounts', async (req, res) => {
   const { userId = 'default' } = req.query
   try {
     const { getComposioClient } = require('./composio')
     const client = getComposioClient()
-    const accounts = await client.connectedAccounts.list({ entityId: userId })
-    const gmail = (accounts.items || []).filter(a =>
-      a.appName?.toLowerCase().includes('gmail')
+    const result = await client.connectedAccounts.list({ entityId: userId })
+    const items = result?.items || result?.data || []
+    const gmail = items.filter(a =>
+      (a.appName || a.appUniqueId || '').toLowerCase().includes('gmail')
     )
     res.json({ ok: true, accounts: gmail })
   } catch (err) {
@@ -36,13 +33,13 @@ app.get('/api/composio/accounts', async (req, res) => {
   }
 })
 
-// ── Composio: initiate link ───────────────────────────────────────────────────
+// ── Composio: initiate OAuth link ─────────────────────────────────────────────
 app.post('/api/composio/link', async (req, res) => {
   const { userId = 'default' } = req.body
   try {
     const { getComposioClient } = require('./composio')
     const client = getComposioClient()
-    const result = await client.connectedAccounts.initiateConnection({
+    const result = await client.connectedAccounts.initiate({
       entityId: userId,
       appName: 'gmail',
       authMode: 'OAUTH2',
@@ -57,7 +54,7 @@ app.post('/api/composio/link', async (req, res) => {
   }
 })
 
-// ── Composio: poll account ────────────────────────────────────────────────────
+// ── Composio: poll account status ─────────────────────────────────────────────
 app.get('/api/composio/accounts/:id', async (req, res) => {
   try {
     const { getComposioClient } = require('./composio')
@@ -69,7 +66,7 @@ app.get('/api/composio/accounts/:id', async (req, res) => {
   }
 })
 
-// ── Send email ────────────────────────────────────────────────────────────────
+// ── Send email via Gmail ──────────────────────────────────────────────────────
 app.post('/api/send-email', async (req, res) => {
   const { connectedAccountId, to, subject, body } = req.body
   if (!connectedAccountId || !to || !subject || !body) {
@@ -80,12 +77,15 @@ app.post('/api/send-email', async (req, res) => {
     const { getComposioClient } = require('./composio')
     const client = getComposioClient()
     const result = await client.actions.execute({
-      action: 'GMAIL_SEND_EMAIL',
-      connectedAccountId,
-      input: { to, subject, messageBody: body },
+      actionName: 'GMAIL_SEND_EMAIL',
+      requestBody: {
+        connectedAccountId,
+        input: { to, subject, messageBody: body },
+      },
     })
-    const messageId = result?.data?.messageId || result?.messageId || null
-    const threadId = result?.data?.threadId || result?.threadId || null
+    const data = result?.data || result || {}
+    const messageId = data.messageId || data.id || null
+    const threadId = data.threadId || null
     res.json({ ok: true, messageId, threadId })
   } catch (err) {
     res.json({ ok: false, error: err.message })
@@ -104,23 +104,25 @@ app.post('/api/check-replies', async (req, res) => {
       await new Promise(r => setTimeout(r, 800))
       try {
         const thread = await client.actions.execute({
-          action: 'GMAIL_GET_THREAD',
-          connectedAccountId,
-          input: { threadId: t.threadId },
+          actionName: 'GMAIL_GET_THREAD',
+          requestBody: {
+            connectedAccountId,
+            input: { threadId: t.threadId },
+          },
         })
         const messages = thread?.data?.messages || thread?.messages || []
         const sentAt = t.sentAt ? new Date(t.sentAt).getTime() : 0
         const reply = messages.find(m => {
-          const from = m.from || m.payload?.headers?.find(h => h.name === 'From')?.value || ''
-          const date = m.internalDate ? parseInt(m.internalDate) : new Date(m.date || 0).getTime()
+          const headers = m.payload?.headers || []
+          const from = headers.find(h => h.name === 'From')?.value || m.from || ''
+          const date = m.internalDate ? parseInt(m.internalDate) : 0
           return selfEmail ? !from.includes(selfEmail) && date > sentAt : date > sentAt
         })
         if (reply) {
           const headers = reply.payload?.headers || []
           const from = headers.find(h => h.name === 'From')?.value || reply.from || ''
-          const date = headers.find(h => h.name === 'Date')?.value || reply.date || ''
-          const snippet = reply.snippet || ''
-          results.push({ key: t.key, hasReply: true, from, date, snippet })
+          const date = headers.find(h => h.name === 'Date')?.value || ''
+          results.push({ key: t.key, hasReply: true, from, date, snippet: reply.snippet || '' })
         } else {
           results.push({ key: t.key, hasReply: false })
         }

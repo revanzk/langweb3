@@ -1,5 +1,6 @@
 // ── Limits ────────────────────────────────────────────────────────────────────
 export const MAX_SPONSORS = 5
+export const MIN_SPONSORS = 3
 export const MAX_EMAILS = 10
 
 // ── Relevance enum ────────────────────────────────────────────────────────────

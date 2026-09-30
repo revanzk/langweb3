@@ -50,7 +50,7 @@ export default function Draft() {
 
   // Poll composio when waiting
   useEffect(() => {
-    if (state.composio.status === 'waiting') {
+    if (state.composio?.status === 'waiting') {
       pollRef.current = setInterval(async () => {
         await pollComposioAccount()
       }, 3000)
@@ -58,7 +58,7 @@ export default function Draft() {
       clearInterval(pollRef.current)
     }
     return () => clearInterval(pollRef.current)
-  }, [state.composio.status])
+  }, [state.composio?.status])
 
   const isGenerating = state.draftPhase === 'generating'
   const drafts = state.drafts || []
@@ -259,7 +259,7 @@ export default function Draft() {
       <ConnectCard />
 
       {/* Pre-send & Queue */}
-      {drafts.length > 0 && state.composio.status === 'active' && (
+      {drafts.length > 0 && state.composio?.status === 'active' && (
         <SendPanel />
       )}
 
@@ -272,7 +272,7 @@ export default function Draft() {
 
 function ConnectCard() {
   const { state, refreshComposio, linkComposio } = useStore()
-  const { status, accountEmail, error } = state.composio
+  const { status, accountEmail, error } = state.composio || {}
 
   const STATUS_CONFIG = {
     idle: { label: 'Periksa koneksi Gmail', action: 'Periksa', fn: refreshComposio, color: 'var(--text-3)' },

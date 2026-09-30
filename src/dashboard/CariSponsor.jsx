@@ -61,16 +61,36 @@ export default function CariSponsor() {
   })
   const [campErrors, setCampErrors] = useState({})
 
-  // Sync shared fields when results arrive (peserta diisi manual di Seksi 3)
+  // Sesi baru tiap hasil AI sukses: reset penuh form kampanye + form manual.
+  // (Store sudah di-wipe oleh SET_RESULTS; ini menyinkronkan state lokal
+  // agar ketikan sesi lama tidak menempel di sesi baru.)
+  const resultsRef = state.results
   useEffect(() => {
-    if (hasResults) {
-      setCampForm(f => ({
-        ...f,
-        jenisEvent: f.jenisEvent || state.search.jenisEvent || '',
-        catatanEvent: f.catatanEvent || state.search.catatanEvent || '',
-      }))
-    }
-  }, [hasResults])
+    if (resultsRef.length === 0) return
+    setCampForm({
+      namaEvent: '',
+      tanggalEvent: '',
+      lokasiEvent: '',
+      penyelenggara: '',
+      kebutuhanSponsorship: '',
+      toneEmail: 'Formal',
+      informasiTambahan: '',
+      namaPIC: '',
+      jabatanPIC: '',
+      kontakPIC: '',
+      emailPIC: '',
+      websiteAcara: '',
+      linkProposal: '',
+      jenisEvent: state.search.jenisEvent || '',
+      perkiraanPeserta: '',
+      catatanEvent: state.search.catatanEvent || '',
+    })
+    setCampErrors({})
+    setManualSubject('')
+    setManualBody('')
+    setManualError(null)
+    setShowManual(false)
+  }, [resultsRef])
 
   // ── Scroll refs ─────────────────────────────────────────────────────────────
   const hasilRef = useRef(null)

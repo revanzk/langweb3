@@ -5,9 +5,10 @@ import {
   parseSearchOutput, parseDraftOutput, mergeSubjectAndBody,
   buildSearchInput, buildDraftInput, buildManualDraftInput,
 } from '../lib/merge.js'
-import { FLOW_SEARCH, FLOW_DRAFT, DELIVERY, RELATIONSHIP, MAX_EMAILS, MAX_SPONSORS } from '../lib/constants.js'
+import { FLOW_SEARCH, FLOW_DRAFT, DELIVERY, RELATIONSHIP, MAX_EMAILS, MIN_SPONSORS } from '../lib/constants.js'
 
-// Maksimal percobaan pencarian agar AI mengembalikan tepat MAX_SPONSORS
+// Maksimal percobaan pencarian agar AI mengembalikan minimal MIN_SPONSORS
+// (maksimal MAX_SPONSORS). Retry hanya jika di bawah MIN_SPONSORS.
 const MAX_SEARCH_ATTEMPTS = 3
 
 // ── Initial state ─────────────────────────────────────────────────────────────
@@ -80,14 +81,18 @@ function reducer(state, action) {
     case 'SET_SEARCH_PHASE':
       return { ...state, searchPhase: action.payload, searchError: action.error || null, searchNote: action.note || '' }
 
+    // Hasil AI baru = sesi baru: semua data lama (kampanye, draft, antrean,
+    // sponsor manual, pilihan, lastDraftKey) dibuang. Yang selamat hanya
+    // history + koneksi Gmail. Draft email sesi baru tetap tersimpan normal.
     case 'SET_RESULTS':
       return {
-        ...state,
+        ...INITIAL_STATE,
+        history: state.history,
+        composio: state.composio || INITIAL_STATE.composio,
+        search: action.search || INITIAL_STATE.search,
         results: action.results,
         summary: action.summary || '',
-        selected: [],
         searchPhase: 'done',
-        searchNote: '',
         lastRun: action.lastRun || null,
       }
 
@@ -141,7 +146,7 @@ function reducer(state, action) {
     }
 
     case 'SET_COMPOSIO':
-      return { ...state, composio: { ...state.composio, ...action.payload } }
+      return { ...state, composio: { ...(state.composio || {}), ...action.payload } }
 
     case 'SET_QUEUE':
       return { ...state, queue: action.queue }
@@ -183,7 +188,7 @@ function reducer(state, action) {
       return {
         ...INITIAL_STATE,
         history: state.history,
-        composio: state.composio,
+        composio: state.composio || INITIAL_STATE.composio,
       }
 
     case 'RESET_ALL':
@@ -213,13 +218,22 @@ function stripRaw(state) {
 function normalizeTransients(state) {
   return {
     ...state,
+    // Migrasi sekali jalan: bunuh nilai peserta basi era input pencarian
+    // (inputnya sudah dihapus; estimasi kini diisi di Detail Kampanye)
+    search: { ...(state.search || {}), perkiraanPeserta: '' },
+    campaign: state.campaign || INITIAL_STATE.campaign,
+    results: state.results || [],
+    manualSponsors: state.manualSponsors || [],
+    selected: state.selected || [],
+    drafts: state.drafts || [],
+    history: state.history || [],
     sending: false,
     searchPhase: state.searchPhase === 'searching' || state.searchPhase === 'waiting'
       ? 'idle' : state.searchPhase,
     draftPhase: state.draftPhase === 'generating' ? 'idle' : state.draftPhase,
     composio: state.composio?.status === 'linking'
       ? { ...state.composio, status: 'disconnected' }
-      : state.composio,
+      : (state.composio || INITIAL_STATE.composio),
     queue: (state.queue || []).map(q =>
       q.status === 'Sending' ? { ...q, status: 'Queued' } : q
     ),
@@ -275,9 +289,9 @@ export function StoreProvider({ children }) {
   }
 
   // ── Actions ─────────────────────────────────────────────────────────────────
-  // Pencarian wajib menghasilkan TEPAT MAX_SPONSORS sponsor. Jika AI
-  // mengembalikan kurang (kasus umum: prompt "maksimal" dibaca sebagai
-  // "boleh kurang"), ulangi otomatis hingga MAX_SEARCH_ATTEMPTS.
+  // Pencarian wajib menghasilkan MIN_SPONSORS–MAX_SPONSORS sponsor. Jika AI
+  // mengembalikan di bawah MIN_SPONSORS, ulangi otomatis hingga
+  // MAX_SEARCH_ATTEMPTS.
   async function runSearch(searchData) {
     // Accept searchData directly — caller dispatch hasn't settled yet when this runs
     const data = searchData || state.search
@@ -298,7 +312,7 @@ export function StoreProvider({ children }) {
         dispatch({
           type: 'SET_SEARCH_PHASE',
           payload: 'searching',
-          note: `AI mengembalikan ${lastCount}/${MAX_SPONSORS} sponsor, mencoba lagi (${attempt}/${MAX_SEARCH_ATTEMPTS})...`,
+          note: `AI menemukan ${lastCount} sponsor (min ${MIN_SPONSORS}), mencoba lagi (${attempt}/${MAX_SEARCH_ATTEMPTS})...`,
         })
       }
 
@@ -333,9 +347,15 @@ export function StoreProvider({ children }) {
       lastDebug = debug
       lastCount = sponsors.length
 
-      if (sponsors.length >= MAX_SPONSORS) {
+      if (sponsors.length >= MIN_SPONSORS) {
         clearTimeout(phaseTimer)
-        dispatch({ type: 'SET_RESULTS', results: sponsors, summary, lastRun: debug })
+        dispatch({
+          type: 'SET_RESULTS',
+          results: sponsors,
+          summary,
+          search: { jenisEvent: data.jenisEvent || '', perkiraanPeserta: '', catatanEvent: data.catatanEvent || '' },
+          lastRun: debug,
+        })
         return { valid: true, ok: true }
       }
       // Kurang dari wajib → loop coba lagi
@@ -344,7 +364,7 @@ export function StoreProvider({ children }) {
     clearTimeout(phaseTimer)
     const err = lastCount === 0
       ? (lastError || 'Tidak ada hasil sponsor yang valid dari AI.')
-      : `AI hanya menemukan ${lastCount} dari ${MAX_SPONSORS} sponsor setelah ${MAX_SEARCH_ATTEMPTS}x percobaan. Coba lagi atau lengkapi catatan event.`
+      : `AI hanya menemukan ${lastCount} dari minimal ${MIN_SPONSORS} sponsor setelah ${MAX_SEARCH_ATTEMPTS}x percobaan. Coba lagi atau lengkapi catatan event.`
     dispatch({ type: 'SET_SEARCH_PHASE', payload: 'error', error: err })
     dispatch({ type: 'SET_LAST_RUN', payload: lastDebug })
     return { valid: true, ok: false, error: err }
@@ -574,7 +594,7 @@ export function StoreProvider({ children }) {
 
   async function sendQueue() {
     if (state.sending) return
-    if (!state.composio.accountId) return
+    if (!state.composio?.accountId) return
 
     const pending = state.queue.filter(q => q.status === DELIVERY.QUEUED)
     if (pending.length === 0) return
@@ -662,7 +682,7 @@ export function StoreProvider({ children }) {
   }
 
   async function checkReplies(keys) {
-    if (!state.composio.accountId) return
+    if (!state.composio?.accountId) return
     dispatch({ type: 'SET_CHECKING_REPLIES', payload: true })
 
     const threads = (keys
@@ -764,7 +784,7 @@ export function StoreProvider({ children }) {
   }
 
   async function pollComposioAccount() {
-    if (!state.composio.accountId) return
+    if (!state.composio?.accountId) return
     const BACKEND = import.meta.env.VITE_COMPOSIO_BACKEND_URL || 'http://localhost:5000'
     try {
       const res = await fetch(`${BACKEND}/api/composio/accounts/${state.composio.accountId}?userId=${encodeURIComponent(getComposioUserId())}`)

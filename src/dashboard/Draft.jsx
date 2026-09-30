@@ -65,16 +65,23 @@ export default function Draft() {
   const safeTab = drafts.length > 0 ? Math.min(activeTab, drafts.length - 1) : 0
   const draft = drafts[safeTab]
 
-  function renderBodyWithHighlights(body) {
+  // Sisa placeholder mentah di body = leftover (belum ter-merge).
+  // Yang asalnya "(tidak tersedia)" ditandai merah, sisanya kuning.
+  function renderBodyWithHighlights(body, leftovers = []) {
     if (!body) return null
     // Pecah dengan regex universal agar [..], {..}, {{..}} semua ter-highlight.
     // Hindari capture-group ganda dari PLACEHOLDER_RE (inner group ikut ter-split).
     const splitRe = /([\[{]+[^\[\]{}]+[\]}]+)/g
     const testRe = /^[\[{]+[^\[\]{}]+[\]}]+$/
+    const forbidden = new Set(
+      leftovers
+        .filter(l => l.endsWith('(tidak tersedia)'))
+        .map(l => l.replace(/\(tidak tersedia\)$/, ''))
+    )
     const parts = body.split(splitRe)
     return parts.map((p, i) =>
       testRe.test(p)
-        ? <mark key={i} style={s.highlight}>{p}</mark>
+        ? <mark key={i} style={forbidden.has(p) ? s.highlightForbidden : s.highlight}>{p}</mark>
         : <span key={i}>{p}</span>
     )
   }
@@ -129,6 +136,7 @@ export default function Draft() {
               onClick={() => { setActiveTab(i); setEditMode(false) }}
             >
               {d.sponsor_name}
+              {d.manual && <span style={s.manualBadge} title="Draft manual (template buatanmu, dirapikan AI)">✎</span>}
               {d.leftovers?.length > 0 && (
                 <span style={s.flagBadge}>{d.leftovers.length} ⚠</span>
               )}
@@ -188,8 +196,13 @@ export default function Draft() {
             <div style={s.leftoverBanner}>
               ⚠ {draft.leftovers.length} placeholder belum terisi — email tidak dapat dikirim:
               {draft.leftovers.map((l, i) => (
-                <code key={i} style={s.leftoverCode}>{l}</code>
+                <code key={i} style={l.endsWith('(tidak tersedia)') ? s.leftoverForbiddenCode : s.leftoverCode}>{l}</code>
               ))}
+              {draft.leftovers.some(l => l.endsWith('(tidak tersedia)')) && (
+                <span style={s.leftoverHint}>
+                  Bertanda (tidak tersedia) = datanya kosong. Lengkapi data kampanye lalu generate ulang, atau hapus kalimatnya manual lewat Edit.
+                </span>
+              )}
             </div>
           )}
 
@@ -202,7 +215,7 @@ export default function Draft() {
                   style={s.bodyTextarea}
                   rows={20}
                 />
-              : <div style={s.bodyPreview}>{renderBodyWithHighlights(draft.body)}</div>
+              : <div style={s.bodyPreview}>{renderBodyWithHighlights(draft.body, draft.leftovers)}</div>
             }
           </div>
 
@@ -287,16 +300,23 @@ function ConnectCard() {
 }
 
 function SendPanel() {
-  const { state, enqueueDrafts, sendQueue, retryQueueItem } = useStore()
+  const { state, enqueueDrafts, sendQueue, retryQueueItem, cancelQueueItem, cancelAllQueued } = useStore()
   const [enqueueResult, setEnqueueResult] = useState(null)
   const drafts = state.drafts
   const pendingDrafts = drafts.filter(d => d.to && (!d.leftovers || d.leftovers.length === 0))
   const blockedDrafts = drafts.filter(d => !d.to || (d.leftovers && d.leftovers.length > 0))
   const totalQueued = state.queue.length
+  const queuedItems = state.queue.filter(q => q.status === DELIVERY.QUEUED)
 
   function handleEnqueue() {
     const result = enqueueDrafts()
     setEnqueueResult(result)
+  }
+
+  function handleCancelAll() {
+    if (queuedItems.length === 0) return
+    if (!window.confirm(`Batalkan ${queuedItems.length} email yang masih antre (belum terkirim)?`)) return
+    cancelAllQueued()
   }
 
   const DELIVERY_COLORS = {
@@ -330,10 +350,18 @@ function SendPanel() {
         <button
           style={{ ...s.btnPrimary, background: 'var(--state-success)' }}
           onClick={sendQueue}
-          disabled={state.sending || state.queue.filter(q => q.status === DELIVERY.QUEUED).length === 0}
+          disabled={state.sending || queuedItems.length === 0}
         >
           {state.sending ? 'Mengirim...' : 'Kirim Semua →'}
         </button>
+        {queuedItems.length > 0 && (
+          <button
+            style={s.btnDanger}
+            onClick={handleCancelAll}
+          >
+            ✕ Batalkan Semua ({queuedItems.length})
+          </button>
+        )}
       </div>
 
       {enqueueResult && !enqueueResult.ok && (
@@ -351,6 +379,9 @@ function SendPanel() {
                 <span style={s.queueTo}>{item.to}</span>
                 <span style={{ ...s.queueStatus, background: dc.bg, color: dc.color }}>{item.status}</span>
                 {item.error && <span style={s.queueError}>{item.error}</span>}
+                {item.status === DELIVERY.QUEUED && (
+                  <button style={s.cancelBtn} onClick={() => cancelQueueItem(item.key)}>✕ Batal</button>
+                )}
                 {item.status === 'Failed' && (
                   <button style={s.retryBtn} onClick={() => retryQueueItem(item.key)}>↺ Retry</button>
                 )}
@@ -397,7 +428,11 @@ const s = {
     padding: '8px 14px', fontSize: 13, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
   },
   leftoverCode: { background: '#fff3cd', padding: '1px 6px', borderRadius: 4, fontFamily: 'monospace', fontSize: 12 },
+  leftoverForbiddenCode: { background: '#fde2e2', color: '#b42318', padding: '1px 6px', borderRadius: 4, fontFamily: 'monospace', fontSize: 12 },
+  leftoverHint: { fontSize: 12, color: 'var(--state-danger)', flexBasis: '100%' },
   highlight: { background: '#fff3cd', color: '#92400e', borderRadius: 3, padding: '0 2px' },
+  highlightForbidden: { background: '#fde2e2', color: '#b42318', borderRadius: 3, padding: '0 2px' },
+  manualBadge: { fontSize: 11, color: 'var(--brand-500)', fontWeight: 700 },
   bodyArea: {},
   bodyPreview: { fontSize: 14, color: 'var(--text-1)', lineHeight: 1.8, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' },
   bodyTextarea: { width: '100%', fontSize: 14, padding: 12, border: '1px solid var(--border-strong)', borderRadius: 8, lineHeight: 1.8, resize: 'vertical', outline: 'none' },
@@ -424,6 +459,11 @@ const s = {
   queueStatus: { fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 9999 },
   queueError: { fontSize: 12, color: 'var(--state-danger)' },
   retryBtn: { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--brand-500)', fontSize: 12 },
+  cancelBtn: { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--state-danger)', fontSize: 12 },
+  btnDanger: {
+    padding: '8px 20px', background: 'transparent', color: 'var(--state-danger)',
+    border: '1px solid var(--state-danger)', borderRadius: 9999, cursor: 'pointer', fontSize: 13, fontWeight: 600,
+  },
   btnPrimary: {
     padding: '8px 20px', background: 'var(--brand-500)', color: '#fff',
     border: 'none', borderRadius: 9999, cursor: 'pointer', fontSize: 13, fontWeight: 600,

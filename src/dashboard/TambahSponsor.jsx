@@ -32,7 +32,6 @@ export default function TambahSponsor() {
     emailPIC: cam.emailPIC || '',
     websiteAcara: cam.websiteAcara || '',
     linkProposal: cam.linkProposal || '',
-    deadlineRespons: cam.deadlineRespons || '',
     jenisEvent: cam.jenisEvent || '',
     perkiraanPeserta: cam.perkiraanPeserta || '',
     catatanEvent: cam.catatanEvent || '',
@@ -341,14 +340,9 @@ export default function TambahSponsor() {
                 <textarea name="kebutuhanSponsorship" value={campForm.kebutuhanSponsorship} onChange={handleCampChange}
                   rows={3} style={{ ...s.input, ...s.textarea, ...(campErrors.kebutuhanSponsorship ? s.inputErr : {}) }} />
               </Field>
-              <div style={s.formGrid}>
-                <Field label="Deadline Respons">
-                  <input type="date" name="deadlineRespons" value={campForm.deadlineRespons} onChange={handleCampChange} style={s.input} />
-                </Field>
-                <Field label="Informasi Tambahan">
-                  <input name="informasiTambahan" value={campForm.informasiTambahan} onChange={handleCampChange} style={s.input} />
-                </Field>
-              </div>
+              <Field label="Informasi Tambahan">
+                <input name="informasiTambahan" value={campForm.informasiTambahan} onChange={handleCampChange} style={s.input} />
+              </Field>
             </Block>
 
             <Block title="Penanggung Jawab (PIC)">

@@ -3,9 +3,12 @@ import { validateSearch } from '../lib/validators.js'
 import { runFlow, extractCandidates } from '../lib/langflow.js'
 import {
   parseSearchOutput, parseDraftOutput, mergeSubjectAndBody,
-  buildSearchInput, buildDraftInput,
+  buildSearchInput, buildDraftInput, buildManualDraftInput,
 } from '../lib/merge.js'
-import { FLOW_SEARCH, FLOW_DRAFT, DELIVERY, RELATIONSHIP, MAX_EMAILS } from '../lib/constants.js'
+import { FLOW_SEARCH, FLOW_DRAFT, DELIVERY, RELATIONSHIP, MAX_EMAILS, MAX_SPONSORS } from '../lib/constants.js'
+
+// Maksimal percobaan pencarian agar AI mengembalikan tepat MAX_SPONSORS
+const MAX_SEARCH_ATTEMPTS = 3
 
 // ── Initial state ─────────────────────────────────────────────────────────────
 const INITIAL_STATE = {
@@ -18,13 +21,14 @@ const INITIAL_STATE = {
   // Search meta
   searchPhase: 'idle', // idle | searching | waiting | done | error
   searchError: null,
+  searchNote: '', // info retry human-readable saat searching/waiting
   lastRun: null,       // debug info
   // Campaign
   campaign: {
     namaEvent: '', tanggalEvent: '', lokasiEvent: '', penyelenggara: '',
     kebutuhanSponsorship: '', toneEmail: 'Formal', informasiTambahan: '',
-    namaPIC: '', kontakPIC: '', emailPIC: '',
-    websiteAcara: '', linkProposal: '', deadlineRespons: '',
+    namaPIC: '', jabatanPIC: '', kontakPIC: '', emailPIC: '',
+    websiteAcara: '', linkProposal: '',
     // shared from search (prefilled)
     jenisEvent: '', perkiraanPeserta: '', catatanEvent: '',
   },
@@ -74,7 +78,7 @@ function reducer(state, action) {
       return { ...state, search: { ...state.search, ...action.payload } }
 
     case 'SET_SEARCH_PHASE':
-      return { ...state, searchPhase: action.payload, searchError: action.error || null }
+      return { ...state, searchPhase: action.payload, searchError: action.error || null, searchNote: action.note || '' }
 
     case 'SET_RESULTS':
       return {
@@ -83,6 +87,7 @@ function reducer(state, action) {
         summary: action.summary || '',
         selected: [],
         searchPhase: 'done',
+        searchNote: '',
         lastRun: action.lastRun || null,
       }
 
@@ -246,6 +251,10 @@ export function StoreProvider({ children }) {
   const saved = loadState()
   const [state, dispatch] = useReducer(reducer, saved || INITIAL_STATE)
   const debounceRef = useRef(null)
+  // Key antrean yang dibatalkan user. Dibaca loop sendQueue agar item yang
+  // dibatalkan saat pengiriman berjalan tidak ikut terkirim (snapshot pending
+  // diambil di awal loop, jadi cek status via state saja tidak cukup).
+  const cancelledRef = useRef(new Set())
 
   // Debounced save
   useEffect(() => {
@@ -266,6 +275,9 @@ export function StoreProvider({ children }) {
   }
 
   // ── Actions ─────────────────────────────────────────────────────────────────
+  // Pencarian wajib menghasilkan TEPAT MAX_SPONSORS sponsor. Jika AI
+  // mengembalikan kurang (kasus umum: prompt "maksimal" dibaca sebagai
+  // "boleh kurang"), ulangi otomatis hingga MAX_SEARCH_ATTEMPTS.
   async function runSearch(searchData) {
     // Accept searchData directly — caller dispatch hasn't settled yet when this runs
     const data = searchData || state.search
@@ -276,42 +288,66 @@ export function StoreProvider({ children }) {
     const phaseTimer = setTimeout(() => dispatch({ type: 'SET_SEARCH_PHASE', payload: 'waiting' }), 4000)
 
     const inputValue = buildSearchInput(data)
-    const startMs = Date.now()
-    const result = await runFlow(FLOW_SEARCH, inputValue)
+    const endpoint = `${import.meta.env.VITE_LANGFLOW_URL}/api/v1/run/${FLOW_SEARCH}`
+    let lastDebug = null
+    let lastCount = 0
+    let lastError = null
+
+    for (let attempt = 1; attempt <= MAX_SEARCH_ATTEMPTS; attempt++) {
+      if (attempt > 1) {
+        dispatch({
+          type: 'SET_SEARCH_PHASE',
+          payload: 'searching',
+          note: `AI mengembalikan ${lastCount}/${MAX_SPONSORS} sponsor, mencoba lagi (${attempt}/${MAX_SEARCH_ATTEMPTS})...`,
+        })
+      }
+
+      const startMs = Date.now()
+      const result = await runFlow(FLOW_SEARCH, inputValue)
+      const ms = Date.now() - startMs
+      const debug = {
+        endpoint,
+        flowId: FLOW_SEARCH,
+        input: inputValue,
+        ms,
+        httpStatus: result.httpStatus,
+        candidates: [],
+        chosenIndex: -1,
+        counts: [],
+        attempt,
+        attempts: MAX_SEARCH_ATTEMPTS,
+        raw: result.data ? JSON.stringify(result.data) : result.error,
+      }
+
+      if (!result.ok) {
+        lastError = result.error
+        lastDebug = debug
+        continue
+      }
+
+      const candidates = extractCandidates(result.data)
+      debug.candidates = candidates
+      const { sponsors, summary, chosenIndex, counts } = parseSearchOutput(candidates)
+      debug.chosenIndex = chosenIndex
+      debug.counts = counts
+      lastDebug = debug
+      lastCount = sponsors.length
+
+      if (sponsors.length >= MAX_SPONSORS) {
+        clearTimeout(phaseTimer)
+        dispatch({ type: 'SET_RESULTS', results: sponsors, summary, lastRun: debug })
+        return { valid: true, ok: true }
+      }
+      // Kurang dari wajib → loop coba lagi
+    }
+
     clearTimeout(phaseTimer)
-
-    const ms = Date.now() - startMs
-    const debug = {
-      endpoint: `${import.meta.env.VITE_LANGFLOW_URL}/api/v1/run/${FLOW_SEARCH}`,
-      flowId: FLOW_SEARCH,
-      input: inputValue,
-      ms,
-      httpStatus: result.httpStatus,
-      candidates: [],
-      chosenIndex: -1,
-      raw: result.data ? JSON.stringify(result.data) : result.error,
-    }
-
-    if (!result.ok) {
-      dispatch({ type: 'SET_SEARCH_PHASE', payload: 'error', error: result.error })
-      dispatch({ type: 'SET_LAST_RUN', payload: debug })
-      return { valid: true, ok: false, error: result.error }
-    }
-
-    const candidates = extractCandidates(result.data)
-    debug.candidates = candidates
-    const { sponsors, summary, chosenIndex } = parseSearchOutput(candidates)
-    debug.chosenIndex = chosenIndex
-
-    if (sponsors.length === 0) {
-      const err = 'Tidak ada hasil sponsor yang valid dari AI.'
-      dispatch({ type: 'SET_SEARCH_PHASE', payload: 'error', error: err })
-      dispatch({ type: 'SET_LAST_RUN', payload: debug })
-      return { valid: true, ok: false, error: err }
-    }
-
-    dispatch({ type: 'SET_RESULTS', results: sponsors, summary, lastRun: debug })
-    return { valid: true, ok: true }
+    const err = lastCount === 0
+      ? (lastError || 'Tidak ada hasil sponsor yang valid dari AI.')
+      : `AI hanya menemukan ${lastCount} dari ${MAX_SPONSORS} sponsor setelah ${MAX_SEARCH_ATTEMPTS}x percobaan. Coba lagi atau lengkapi catatan event.`
+    dispatch({ type: 'SET_SEARCH_PHASE', payload: 'error', error: err })
+    dispatch({ type: 'SET_LAST_RUN', payload: lastDebug })
+    return { valid: true, ok: false, error: err }
   }
 
   async function runDraft(draftKey) {
@@ -340,6 +376,7 @@ export function StoreProvider({ children }) {
         subject,
         body,
         edited: false,
+        manual: false,
         leftovers,
       })
     }
@@ -367,7 +404,7 @@ export function StoreProvider({ children }) {
     dispatch({
       type: 'UPDATE_DRAFT',
       sponsor_name: sponsorName,
-      payload: { subject, body, leftovers, edited: false },
+      payload: { subject, body, leftovers, edited: false, manual: false },
     })
     // Pastikan phase kembali done bila sebelumnya error dan draft sudah ada
     dispatch({ type: 'SET_DRAFT_PHASE', payload: 'done' })
@@ -407,6 +444,7 @@ export function StoreProvider({ children }) {
         subject,
         body,
         edited: false,
+        manual: false,
         leftovers,
       })
     }
@@ -426,6 +464,48 @@ export function StoreProvider({ children }) {
     ]
     dispatch({ type: 'SET_DRAFTS', drafts: merged })
     return { ok: true, count: freshByName.size, failed: names.length - freshByName.size, error: lastError }
+  }
+
+  // Mode "Buat Draft Manual": template buatan pengguna dikirim ke AI untuk
+  // dirapikan (uji coba), lalu di-merge sadar-ketersediaan seperti biasa.
+  // Hasil ditandai manual:true agar UI bisa membedakan dari draft AI penuh.
+  async function runManualDraft(templateSubject, templateBody) {
+    if (selectedSponsors.length === 0) return { ok: false, error: 'Tidak ada sponsor terpilih.' }
+    if (!templateBody || !String(templateBody).trim()) {
+      return { ok: false, error: 'Isi draft manual masih kosong.' }
+    }
+
+    dispatch({ type: 'SET_DRAFT_PHASE', payload: 'generating' })
+
+    const drafts = []
+    for (const sponsor of selectedSponsors) {
+      const inputValue = buildManualDraftInput(templateSubject, templateBody, state.campaign, sponsor)
+      const result = await runFlow(FLOW_DRAFT, inputValue)
+
+      if (!result.ok) {
+        dispatch({ type: 'SET_DRAFT_PHASE', payload: 'error', error: result.error })
+        return { ok: false, error: result.error }
+      }
+
+      const candidates = extractCandidates(result.data)
+      const rawText = candidates[0] || ''
+      const { subject: rawSubject, body: rawBody } = parseDraftOutput(rawText)
+      const { subject, body, leftovers } = mergeSubjectAndBody(rawSubject, rawBody, state.campaign, sponsor)
+
+      drafts.push({
+        sponsor_name: sponsor.sponsor_name,
+        to: sponsor.contact_email || '',
+        subject: subject || String(templateSubject || '').trim(),
+        body: body || String(templateBody).trim(),
+        edited: false,
+        manual: true,
+        leftovers,
+      })
+    }
+
+    const draftKey = [state.campaign?.namaEvent || '', ...state.selected].join('|')
+    dispatch({ type: 'SET_DRAFTS', drafts, key: draftKey })
+    return { ok: true, count: drafts.length }
   }
 
   function updateDraft(sponsorName, payload) {
@@ -503,6 +583,8 @@ export function StoreProvider({ children }) {
     dispatch({ type: 'SET_SENDING', payload: true })
 
     for (const item of pending) {
+      // Lewati item yang dibatalkan user setelah snapshot pending diambil
+      if (cancelledRef.current.has(item.key)) continue
       dispatch({ type: 'UPDATE_QUEUE_ITEM', key: item.key, payload: { status: DELIVERY.SENDING } })
       try {
         const res = await fetch(
@@ -558,6 +640,25 @@ export function StoreProvider({ children }) {
 
   function retryQueueItem(key) {
     dispatch({ type: 'UPDATE_QUEUE_ITEM', key, payload: { status: DELIVERY.QUEUED, error: null } })
+  }
+
+  // Batalkan item antrean yang masih Queued (belum terkirim): hapus dari
+  // antrean sehingga kuota MAX_EMAILS bebas lagi. Item Sending/Sent/Failed
+  // tidak bisa dibatalkan — return false agar UI bisa mengabaikan.
+  function cancelQueueItem(key) {
+    const item = state.queue.find(q => q.key === key)
+    if (!item || item.status !== DELIVERY.QUEUED) return false
+    cancelledRef.current.add(key)
+    dispatch({ type: 'SET_QUEUE', queue: state.queue.filter(q => q.key !== key) })
+    return true
+  }
+
+  function cancelAllQueued() {
+    const keys = state.queue.filter(q => q.status === DELIVERY.QUEUED).map(q => q.key)
+    if (keys.length === 0) return { ok: false, count: 0 }
+    keys.forEach(k => cancelledRef.current.add(k))
+    dispatch({ type: 'SET_QUEUE', queue: state.queue.filter(q => q.status !== DELIVERY.QUEUED) })
+    return { ok: true, count: keys.length }
   }
 
   async function checkReplies(keys) {
@@ -701,6 +802,7 @@ export function StoreProvider({ children }) {
       runDraft,
       regenerateDraft,
       regenerateManyDrafts,
+      runManualDraft,
       updateDraft,
       toggleSelected,
       addManualSponsors,
@@ -709,6 +811,8 @@ export function StoreProvider({ children }) {
       enqueueDrafts,
       sendQueue,
       retryQueueItem,
+      cancelQueueItem,
+      cancelAllQueued,
       checkReplies,
       refreshComposio,
       linkComposio,

@@ -1,11 +1,16 @@
-import { scoreToLevel } from './constants.js'
+import { scoreToLevel, MAX_SPONSORS } from './constants.js'
 
 /**
  * Parse search flow response candidates into sponsor array.
- * Tries each candidate in order; keeps first that validates as sponsor JSON.
- * Returns { sponsors, summary, chosenIndex, raw }
+ * Evaluates ALL candidates and keeps the one with the MOST valid sponsors
+ * (previously: first validating candidate won, even with fewer sponsors).
+ * Entries without sponsor_name are dropped and counted.
+ * Returns { sponsors, summary, chosenIndex, counts[], raw }
  */
 export function parseSearchOutput(candidates) {
+  let best = null
+  const counts = []
+
   for (let i = 0; i < candidates.length; i++) {
     const text = candidates[i]
     try {
@@ -14,30 +19,46 @@ export function parseSearchOutput(candidates) {
       // Slice outer { ... }
       const start = clean.indexOf('{')
       const end = clean.lastIndexOf('}')
-      if (start === -1 || end === -1) continue
+      if (start === -1 || end === -1) {
+        counts.push({ index: i, valid: 0, dropped: 0, ok: false })
+        continue
+      }
       clean = clean.slice(start, end + 1)
 
       const parsed = JSON.parse(clean)
-      if (!parsed.sponsor || !Array.isArray(parsed.sponsor)) continue
+      if (!parsed.sponsor || !Array.isArray(parsed.sponsor)) {
+        counts.push({ index: i, valid: 0, dropped: 0, ok: false })
+        continue
+      }
 
-      const sponsors = parsed.sponsor
+      const rawCount = parsed.sponsor.length
+      const named = parsed.sponsor
         .filter(s => s.sponsor_name && String(s.sponsor_name).trim())
+      const sponsors = named
         .map(s => normalizeSponsors(s))
-        .slice(0, 5)
+        .slice(0, MAX_SPONSORS)
 
+      counts.push({ index: i, valid: sponsors.length, dropped: rawCount - named.length, ok: sponsors.length > 0 })
       if (sponsors.length === 0) continue
 
-      return {
-        sponsors,
-        summary: parsed.summary || '',
-        chosenIndex: i,
-        raw: text,
+      if (!best || sponsors.length > best.sponsors.length) {
+        best = {
+          sponsors,
+          summary: parsed.summary || '',
+          chosenIndex: i,
+          raw: text,
+        }
       }
+      // Can't do better than the cap — stop early
+      if (best.sponsors.length >= MAX_SPONSORS) break
     } catch {
+      counts.push({ index: i, valid: 0, dropped: 0, ok: false, parseError: true })
       continue
     }
   }
-  return { sponsors: [], summary: '', chosenIndex: -1, raw: candidates.join('\n---\n') }
+
+  if (best) return { ...best, counts }
+  return { sponsors: [], summary: '', chosenIndex: -1, counts, raw: candidates.join('\n---\n') }
 }
 
 function normalizeSponsors(s) {
@@ -94,9 +115,27 @@ export function parseDraftOutput(text) {
   return { subject, body }
 }
 
-// ── Fuzzy placeholder merger (toleran lebar) ────────────────────────────────────
+// ── Placeholder merger (whitelist + alias + fuzzy) ─────────────────────────────
 // Mendukung [..], {..}, {{..}}, [[..]], snake_case, EN/ID synonym, typo ringan.
+// Urutan cocok: (1) persis whitelist → (2) kamus alias varian AI →
+// (3) fuzzy semantik lama → (4) tak dikenal = leftover (blokir kirim).
 export const PLACEHOLDER_RE = /[\[{]+([^\[\]{}]+)[\]}]+/g
+
+// Whitelist resmi template email (kurung siku, huruf kecil, underscore).
+export const PLACEHOLDER_WHITELIST = [
+  'nama_perusahaan',
+  'nama_acara',
+  'tanggal_acara',
+  'lokasi_acara',
+  'jumlah_peserta',
+  'jenis_dukungan',
+  'link_proposal',
+  'nama_pic',
+  'jabatan_pic',
+  'telepon_pic',
+  'email_pic',
+  'website_event',
+]
 
 const STOPWORDS = /\b(masukkan|isi|tulis|cantumkan|silakan|harap|mohon|di sini|berikut|tersebut|yang|please|enter|write|fill)\b/gi
 
@@ -107,6 +146,95 @@ function normalize(str) {
     .replace(STOPWORDS, '')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+function formatTanggalID(value) {
+  if (!value || !String(value).trim()) return null
+  const d = new Date(value)
+  if (isNaN(d.getTime())) return String(value).trim()
+  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+// Nilai kanonis per placeholder. null = field tidak tersedia →
+// leftover "(tidak tersedia)" (blokir kirim, jangan karang nilai).
+// Pengecualian: nama_perusahaan selalu tersedia (sponsor_name wajib ada).
+const CANONICAL_DEFS = {
+  nama_perusahaan: { resolve: (c, s) => s?.sponsor_name?.trim() || null, alwaysAvailable: true },
+  nama_acara: { resolve: (c) => c?.namaEvent?.trim() || null },
+  tanggal_acara: { resolve: (c) => formatTanggalID(c?.tanggalEvent) },
+  lokasi_acara: { resolve: (c) => c?.lokasiEvent?.trim() || null },
+  jumlah_peserta: { resolve: (c) => c?.perkiraanPeserta ? String(c.perkiraanPeserta).trim() : null },
+  jenis_dukungan: { resolve: (c) => c?.kebutuhanSponsorship?.trim() || null },
+  link_proposal: { resolve: (c) => c?.linkProposal?.trim() || null },
+  nama_pic: { resolve: (c) => c?.namaPIC?.trim() || null },
+  jabatan_pic: { resolve: (c) => c?.jabatanPIC?.trim() || null },
+  telepon_pic: { resolve: (c) => c?.kontakPIC?.trim() || null },
+  email_pic: { resolve: (c) => c?.emailPIC?.trim() || null },
+  website_event: { resolve: (c) => c?.websiteAcara?.trim() || null },
+}
+
+// Kamus alias: varian ejaan AI yang diamati/diprediksi per placeholder kanonis.
+// Kuncilookup dinormalisasi (lowercase, _/- → spasi) agar varian kurung,
+// kapital, dan pemisah otomatis tercakup.
+const PLACEHOLDER_ALIASES = {
+  nama_perusahaan: [
+    'nama perusahaan sponsor', 'nama perusahaan', 'nama sponsor',
+    'perusahaan sponsor', 'company name', 'sponsor name', 'nama company',
+    'name perusahaan', 'company', 'sponsor', 'perusahaan',
+  ],
+  nama_acara: [
+    'nama acara', 'nama event', 'name acara', 'event name',
+    'acara', 'nama kegiatan', 'judul acara', 'judul event',
+  ],
+  tanggal_acara: [
+    'tanggal acara', 'tanggal event', 'tanggal kegiatan', 'date acara',
+    'event date', 'tanggal pelaksanaan', 'waktu pelaksanaan',
+    'jadwal acara', 'hari tanggal acara',
+  ],
+  lokasi_acara: [
+    'lokasi acara', 'lokasi event', 'tempat acara', 'tempat event',
+    'venue acara', 'venue event', 'lokasi kegiatan', 'alamat acara',
+  ],
+  jumlah_peserta: [
+    'jumlah peserta', 'perkiraan peserta', 'total peserta', 'target peserta',
+    'peserta', 'jumlah pengunjung', 'estimasi peserta', 'number of participants',
+  ],
+  jenis_dukungan: [
+    'jenis dukungan', 'bentuk dukungan', 'kebutuhan sponsorship',
+    'kebutuhan sponsor', 'dukungan', 'jenis sponsorship',
+    'bentuk sponsorship', 'dukungan yang dibutuhkan',
+  ],
+  link_proposal: [
+    'link proposal', 'tautan proposal', 'url proposal', 'lampiran proposal',
+    'dokumen proposal', 'file proposal', 'proposal link',
+  ],
+  nama_pic: [
+    'nama pic', 'nama anda', 'nama penanggung jawab', 'nama lengkap',
+    'nama pengirim', 'your name', 'nama kontak',
+  ],
+  jabatan_pic: [
+    'jabatan pic', 'jabatan anda', 'posisi pic', 'posisi anda',
+    'jabatan', 'position', 'jabatan penanggung jawab', 'role pic',
+  ],
+  telepon_pic: [
+    'telepon pic', 'nomor kontak anda', 'nomor telepon', 'nomor hp',
+    'nomor wa', 'telepon anda', 'kontak anda', 'phone number',
+    'contact number', 'no hp', 'no wa', 'kontak pic', 'nomor kontak',
+    'telepon', 'nomor telepon anda',
+  ],
+  email_pic: [
+    'email pic', 'alamat email anda', 'email anda', 'alamat email',
+    'email address', 'your email', 'email pengirim', 'email',
+  ],
+  website_event: [
+    'website event', 'website acara', 'situs acara', 'link website',
+    'tautan website', 'website resmi', 'event website', 'web acara',
+  ],
+}
+
+const ALIAS_LOOKUP = new Map()
+for (const [canon, list] of Object.entries(PLACEHOLDER_ALIASES)) {
+  for (const alias of list) ALIAS_LOOKUP.set(normalize(alias), canon)
 }
 
 // Cek apakah token ternormalisasi memuat salah satu kata (word-boundary aware
@@ -172,11 +300,6 @@ function classifyPlaceholder(norm) {
     return 'industry'
   }
 
-  // 8. Deadline (trap "batas"/"tautan" tunggal sudah disaring sebelum ini)
-  if (hasAny(norm, 'deadline', 'tenggat', 'due', 'closing', 'tenggat waktu', 'batas waktu', 'batas akhir', 'tanggal deadline')) {
-    return 'deadline'
-  }
-
   // 9. Link proposal
   if (hasWord(norm, 'proposal') || hasWord(norm, 'prososal')) return 'linkProposal'
 
@@ -189,33 +312,50 @@ function classifyPlaceholder(norm) {
   return null
 }
 
-function resolveValue(key, campaign, sponsor) {
+// Pemetaan kunci fuzzy lama → kunci kanonis. Tiga konsep turunan sponsor
+// (location/industry/contactEmail) tidak ada padanannya di whitelist —
+// dipertahankan dengan fallback lama agar template gaya lama tetap jalan.
+const LEGACY_TO_CANON = {
+  company: 'nama_perusahaan',
+  namaPIC: 'nama_pic',
+  kontakPIC: 'telepon_pic',
+  emailPIC: 'email_pic',
+  linkProposal: 'link_proposal',
+  websiteAcara: 'website_event',
+}
+
+function resolveLegacyValue(key, campaign, sponsor) {
   switch (key) {
-    case 'company':
-      return sponsor?.sponsor_name || null
     case 'location':
       return sponsor?.location || 'Indonesia'
     case 'industry':
       return sponsor?.industry || 'perusahaan terkemuka di bidangnya'
-    case 'deadline':
-      return campaign?.deadlineRespons
-        ? new Date(campaign.deadlineRespons).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
-        : 'yang akan kami konfirmasi lebih lanjut'
-    case 'namaPIC':
-      return campaign?.namaPIC || null
-    case 'kontakPIC':
-      return campaign?.kontakPIC || null
-    case 'emailPIC':
-      return campaign?.emailPIC || null
-    case 'linkProposal':
-      return campaign?.linkProposal || 'akan kami kirimkan menyusul'
-    case 'websiteAcara':
-      return campaign?.websiteAcara || 'website resmi acara kami'
     case 'contactEmail':
       return sponsor?.contact_email || 'email resmi perusahaan'
     default:
       return null
   }
+}
+
+// Klasifikasi satu token placeholder ke { kind, key }:
+// kind 'canonical' (whitelist/alias/fuzzy-terpetakan) atau 'legacy'
+// (location/industry/contactEmail). null = tak dikenal.
+function canonicalizePlaceholder(inner) {
+  const core = String(inner).trim().toLowerCase()
+  if (PLACEHOLDER_WHITELIST.includes(core)) {
+    return { kind: 'canonical', key: core }
+  }
+  const norm = normalize(inner)
+  if (!norm) return null
+  if (ALIAS_LOOKUP.has(norm)) {
+    return { kind: 'canonical', key: ALIAS_LOOKUP.get(norm) }
+  }
+  const legacy = classifyPlaceholder(norm)
+  if (!legacy) return null
+  if (LEGACY_TO_CANON[legacy]) {
+    return { kind: 'canonical', key: LEGACY_TO_CANON[legacy] }
+  }
+  return { kind: 'legacy', key: legacy }
 }
 
 // Tokens that must STAY as leftovers — never auto-fill (dicek versi normalized)
@@ -236,8 +376,39 @@ function isTrapped(tokenInner) {
 }
 
 /**
+ * Ketersediaan placeholder per data aktual. Dipakai untuk membangun
+ * FIELD_TERSEDIA / FIELD_TIDAK_ADA dan untuk menilai leftover.
+ * Returns { tersedia: ['[nama_acara]', ...], tidakAda: [...] }
+ */
+export function getAvailablePlaceholders(campaign, sponsor) {
+  const tersedia = []
+  const tidakAda = []
+  for (const name of PLACEHOLDER_WHITELIST) {
+    const value = CANONICAL_DEFS[name].resolve(campaign, sponsor)
+    ;(value ? tersedia : tidakAda).push(`[${name}]`)
+  }
+  return { tersedia, tidakAda }
+}
+
+/**
+ * Blok konteks {context} untuk prompt draft: daftar field tersedia/tidak-ada
+ * dalam istilah whitelist agar AI hanya memakai placeholder yang diizinkan.
+ */
+export function buildDraftContext(campaign, sponsor) {
+  const { tersedia, tidakAda } = getAvailablePlaceholders(campaign, sponsor)
+  return [
+    `FIELD_TERSEDIA: ${tersedia.join(', ') || '-'}`,
+    `FIELD_TIDAK_ADA: ${tidakAda.join(', ') || '-'}`,
+  ].join('\n')
+}
+
+/**
  * Merge teks (subject maupun body): ganti [..], {..}, {{..}} dengan
  * data campaign/sponsor. Returns { merged, leftovers[] }
+ * - Field tersedia → diganti nilai.
+ * - Placeholder field TIDAK tersedia → leftover "(tidak tersedia)"
+ *   (blokir kirim; jangan karang nilai pengganti).
+ * - Token tak dikenal → leftover (blokir kirim, highlight kuning).
  */
 export function mergeText(text, campaign, sponsor) {
   if (!text) return { merged: text || '', leftovers: [] }
@@ -249,18 +420,25 @@ export function mergeText(text, campaign, sponsor) {
       return match
     }
 
-    const norm = normalize(inner)
-    const key = classifyPlaceholder(norm)
+    const hit = canonicalizePlaceholder(inner)
 
-    if (key) {
-      const value = resolveValue(key, campaign, sponsor)
+    if (!hit) {
+      // Unknown token → leftover
+      leftovers.push(match)
+      return match
+    }
+
+    if (hit.kind === 'legacy') {
+      const value = resolveLegacyValue(hit.key, campaign, sponsor)
       if (value) return value
       leftovers.push(`${match}(kosong)`)
       return match
     }
 
-    // Unknown token → leftover (blokir kirim, highlight kuning)
-    leftovers.push(match)
+    const def = CANONICAL_DEFS[hit.key]
+    const value = def.resolve(campaign, sponsor)
+    if (value) return value
+    leftovers.push(def.alwaysAvailable ? `${match}(kosong)` : `${match}(tidak tersedia)`)
     return match
   })
 
@@ -289,11 +467,14 @@ export function mergeSubjectAndBody(subject, body, campaign, sponsor) {
 
 /**
  * Build the search input string (exactly 3 newline-joined lines).
+ * Estimasi peserta diisi belakangan di Detail Kampanye — saat pencarian
+ * baris ketiga dikirim '-' agar kontrak 3-baris flow Langflow tetap utuh.
  */
 export function buildSearchInput({ jenisEvent, perkiraanPeserta, catatanEvent }) {
+  const peserta = String(perkiraanPeserta || '').trim()
   return [
     `Jenis Event: ${jenisEvent}`,
-    `Perkiraan Peserta: ${perkiraanPeserta}`,
+    `Perkiraan Peserta: ${peserta || '-'}`,
     `Catatan Event: ${catatanEvent}`,
   ].join('\n')
 }
@@ -317,6 +498,9 @@ export function buildDraftInput(campaign, sponsor) {
   if (campaign.informasiTambahan && campaign.informasiTambahan.trim()) {
     lines.push(`Informasi Tambahan: ${campaign.informasiTambahan}`)
   }
+  if (campaign.jabatanPIC && campaign.jabatanPIC.trim()) {
+    lines.push(`Jabatan PIC: ${campaign.jabatanPIC}`)
+  }
 
   lines.push('')
   lines.push('Sponsor terpilih:')
@@ -330,6 +514,34 @@ export function buildDraftInput(campaign, sponsor) {
 
   lines.push('')
   lines.push('Buatkan satu template email sponsorship dengan placeholder dalam kurung siku seperti [Nama Perusahaan Sponsor].')
+  lines.push('')
+  lines.push(buildDraftContext(campaign, sponsor))
 
   return lines.join('\n')
+}
+
+/**
+ * Build input untuk mode "Buat Draft Manual": draft buatan pengguna dikirim
+ * ke AI untuk dirapikan — AI wajib mempertahankan placeholder whitelist
+ * persis, menghapus kalimat ber-field-tidak-ada, dan tidak mengisi nilai asli.
+ */
+export function buildManualDraftInput(templateSubject, templateBody, campaign, sponsor) {
+  return [
+    'Berikut draft email sponsorship buatan pengguna. Tugasmu: rapikan bahasa Indonesianya agar profesional dan persuasif untuk penawaran sponsorship.',
+    'PERTAHANKAN semua placeholder whitelist PERSIS seperti aslinya (kurung siku, huruf kecil, underscore). Jangan ubah ejaan placeholder, jangan membuat placeholder baru, dan jangan mengganti placeholder dengan data asli.',
+    'Hapus seluruh kalimat atau baris yang membutuhkan field di FIELD_TIDAK_ADA. Jangan tulis nilai asli field langsung di email.',
+    '',
+    buildDraftContext(campaign, sponsor),
+    `Whitelist: ${PLACEHOLDER_WHITELIST.map(p => `[${p}]`).join(', ')}`,
+    '',
+    `Subjek (draft pengguna): ${templateSubject?.trim() || '-'}`,
+    'Isi (draft pengguna):',
+    `${templateBody?.trim() || ''}`,
+    '',
+    'Keluarkan hasil dengan format persis:',
+    'Subjek: ...',
+    '',
+    'Isi:',
+    '...',
+  ].join('\n')
 }

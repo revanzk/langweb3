@@ -1,14 +1,11 @@
 // ── Search form validators ────────────────────────────────────────────────────
-export function validateSearch({ jenisEvent, perkiraanPeserta, catatanEvent }) {
+// Seksi 1 hanya: jenisEvent (dropdown) + catatanEvent. Estimasi peserta
+// diisi belakangan di Detail Kampanye (divalidasi validateCampaign).
+export function validateSearch({ jenisEvent, catatanEvent }) {
   const errors = {}
 
-  if (!jenisEvent || jenisEvent.trim().length < 3) {
-    errors.jenisEvent = 'Jenis event wajib diisi, minimal 3 karakter.'
-  }
-
-  const peserta = String(perkiraanPeserta || '').trim()
-  if (!peserta || !/^\d+$/.test(peserta) || parseInt(peserta, 10) < 10) {
-    errors.perkiraanPeserta = 'Perkiraan peserta wajib diisi, angka minimal 10.'
+  if (!jenisEvent || !jenisEvent.trim()) {
+    errors.jenisEvent = 'Jenis event wajib dipilih.'
   }
 
   const catatan = String(catatanEvent || '').trim()
@@ -17,6 +14,14 @@ export function validateSearch({ jenisEvent, perkiraanPeserta, catatanEvent }) {
   }
 
   return { valid: Object.keys(errors).length === 0, errors }
+}
+
+export function validatePeserta(perkiraanPeserta) {
+  const peserta = String(perkiraanPeserta || '').trim()
+  if (!peserta || !/^\d+$/.test(peserta) || parseInt(peserta, 10) < 10) {
+    return 'Perkiraan peserta wajib diisi, angka minimal 10.'
+  }
+  return null
 }
 
 // ── Campaign form validators ──────────────────────────────────────────────────
@@ -30,6 +35,9 @@ export function validateCampaign(fields) {
   req('lokasiEvent', 'Lokasi event')
   req('penyelenggara', 'Penyelenggara')
   req('kebutuhanSponsorship', 'Kebutuhan sponsorship')
+
+  const pesertaError = validatePeserta(fields.perkiraanPeserta)
+  if (pesertaError) errors.perkiraanPeserta = pesertaError
 
   if (!fields.tanggalEvent || !String(fields.tanggalEvent).trim()) {
     errors.tanggalEvent = 'Tanggal event wajib diisi.'

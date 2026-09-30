@@ -57,6 +57,21 @@ export const DELIVERY = {
 export const TONE_OPTIONS = ['Formal', 'Santai', 'Antusias']
 export const TONE_DEFAULT = 'Formal'
 
+// ── Jenis event (dropdown pencarian) ──────────────────────────────────────────
+export const JENIS_EVENT_OPTIONS = [
+  'Seminar',
+  'Workshop',
+  'Hackathon',
+  'Kompetisi',
+  'Festival',
+  'Konser',
+  'Webinar',
+  'Pameran',
+  'Bakti Sosial',
+  'Olahraga',
+  'Lainnya',
+]
+
 // ── Langflow flow IDs ─────────────────────────────────────────────────────────
 export const FLOW_SEARCH = import.meta.env.VITE_LANGFLOW_SEARCH_FLOW_ID || '5d9c3617'
 export const FLOW_DRAFT = import.meta.env.VITE_LANGFLOW_DRAFT_FLOW_ID || '45313891'

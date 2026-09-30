@@ -58,7 +58,9 @@ export default function Hasil() {
       {/* Context strip */}
       <div style={s.contextStrip}>
         <span style={s.contextItem}>🎯 {state.search.jenisEvent}</span>
-        <span style={s.contextItem}>👥 {state.search.perkiraanPeserta} peserta</span>
+        {String(state.search.perkiraanPeserta || '').trim() && (
+          <span style={s.contextItem}>👥 {state.search.perkiraanPeserta} peserta</span>
+        )}
         <button style={s.backLink} onClick={() => navigate('/app/cari-sponsor')}>← Ubah pencarian</button>
       </div>
 

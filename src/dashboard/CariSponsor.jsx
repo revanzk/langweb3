@@ -2,7 +2,8 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/store.jsx'
 import { validateCampaign } from '../lib/validators.js'
-import { RELEVANCE_LEVEL_LIST, TONE_OPTIONS } from '../lib/constants.js'
+import { RELEVANCE_LEVEL_LIST, TONE_OPTIONS, JENIS_EVENT_OPTIONS } from '../lib/constants.js'
+import { PLACEHOLDER_WHITELIST } from '../lib/merge.js'
 import DebugPanel from '../components/DebugPanel.jsx'
 
 const CATATAN_MIN = 30
@@ -17,7 +18,7 @@ const LEVEL_COLORS = {
 }
 
 export default function CariSponsor() {
-  const { state, runSearch, dispatch, allSponsors, selectedSponsors, toggleSelected } = useStore()
+  const { state, runSearch, runManualDraft, dispatch, allSponsors, selectedSponsors, toggleSelected } = useStore()
   const navigate = useNavigate()
 
   const hasResults = state.results.length > 0
@@ -49,24 +50,23 @@ export default function CariSponsor() {
     toneEmail: cam.toneEmail || 'Formal',
     informasiTambahan: cam.informasiTambahan || '',
     namaPIC: cam.namaPIC || '',
+    jabatanPIC: cam.jabatanPIC || '',
     kontakPIC: cam.kontakPIC || '',
     emailPIC: cam.emailPIC || '',
     websiteAcara: cam.websiteAcara || '',
     linkProposal: cam.linkProposal || '',
-    deadlineRespons: cam.deadlineRespons || '',
     jenisEvent: cam.jenisEvent || state.search.jenisEvent || '',
     perkiraanPeserta: cam.perkiraanPeserta || state.search.perkiraanPeserta || '',
     catatanEvent: cam.catatanEvent || state.search.catatanEvent || '',
   })
   const [campErrors, setCampErrors] = useState({})
 
-  // Sync shared fields when results arrive
+  // Sync shared fields when results arrive (peserta diisi manual di Seksi 3)
   useEffect(() => {
     if (hasResults) {
       setCampForm(f => ({
         ...f,
         jenisEvent: f.jenisEvent || state.search.jenisEvent || '',
-        perkiraanPeserta: f.perkiraanPeserta || state.search.perkiraanPeserta || '',
         catatanEvent: f.catatanEvent || state.search.catatanEvent || '',
       }))
     }
@@ -83,8 +83,7 @@ export default function CariSponsor() {
     if (searchErrors[name]) setSearchErrors(err => ({ ...err, [name]: null }))
   }
 
-  async function handleSearch(e) {
-    e.preventDefault()
+  async function doSearch() {
     // Pass form directly — dispatch is async so state.search won't be updated yet
     const result = await runSearch(searchForm)
     if (!result) return
@@ -93,6 +92,11 @@ export default function CariSponsor() {
     dispatch({ type: 'SET_SEARCH', payload: searchForm })
     if (!result.ok) { setShowDebug(true); return }
     setTimeout(() => hasilRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
+  }
+
+  async function handleSearch(e) {
+    e.preventDefault()
+    await doSearch()
   }
 
   function switchView(v) {
@@ -132,6 +136,52 @@ export default function CariSponsor() {
     navigate('/app/cari-sponsor/draft')
   }
 
+  // ── Draft manual (template buatan user → dirapikan AI) ─────────────────────
+  const [showManual, setShowManual] = useState(false)
+  const [manualSubject, setManualSubject] = useState('')
+  const [manualBody, setManualBody] = useState('')
+  const [manualSending, setManualSending] = useState(false)
+  const [manualError, setManualError] = useState(null)
+  const manualBodyRef = useRef(null)
+
+  function insertManualPlaceholder(name) {
+    const token = `[${name}]`
+    const el = manualBodyRef.current
+    if (!el) {
+      setManualBody(b => (b ? `${b} ${token}` : token))
+      return
+    }
+    const start = el.selectionStart ?? manualBody.length
+    const end = el.selectionEnd ?? manualBody.length
+    const next = `${manualBody.slice(0, start)}${token}${manualBody.slice(end)}`
+    setManualBody(next)
+    requestAnimationFrame(() => {
+      el.focus()
+      const pos = start + token.length
+      el.setSelectionRange(pos, pos)
+    })
+  }
+
+  async function handleManualSubmit(e) {
+    e.preventDefault()
+    const { valid, errors } = validateCampaign(campForm)
+    if (!valid) { setCampErrors(errors); return }
+    if (!manualBody.trim()) {
+      setManualError('Isi draft manual masih kosong.')
+      return
+    }
+    dispatch({ type: 'SET_CAMPAIGN', payload: campForm })
+    setManualSending(true)
+    setManualError(null)
+    const res = await runManualDraft(manualSubject, manualBody)
+    setManualSending(false)
+    if (!res?.ok) {
+      setManualError(res?.error || 'Gagal memproses draft manual.')
+      return
+    }
+    navigate('/app/cari-sponsor/draft')
+  }
+
   // ── Hasil display logic — hanya hasil AI, manual tidak muncul di sini ───────
   const filters = ['Semua', ...RELEVANCE_LEVEL_LIST]
   const filtered = state.results.filter(sp => {
@@ -146,7 +196,7 @@ export default function CariSponsor() {
   const display = sorted
 
   const phaseLabel = state.searchPhase === 'searching'
-    ? 'Menghubungi AI...'
+    ? (state.searchNote || 'Menghubungi AI...')
     : state.searchPhase === 'waiting'
       ? 'Menunggu hasil...'
       : null
@@ -163,19 +213,16 @@ export default function CariSponsor() {
         </div>
 
         <form onSubmit={handleSearch} noValidate>
-          <div style={s.formGrid}>
-            <Field label="Jenis Event *" error={searchErrors.jenisEvent}>
-              <input name="jenisEvent" value={searchForm.jenisEvent} onChange={handleSearchChange}
-                disabled={isSearching}
-                placeholder="cth. Hackathon teknologi, Seminar nasional..."
-                style={{ ...s.input, ...(searchErrors.jenisEvent ? s.inputErr : {}) }} />
-            </Field>
-            <Field label="Perkiraan Peserta *" error={searchErrors.perkiraanPeserta}>
-              <input name="perkiraanPeserta" value={searchForm.perkiraanPeserta} onChange={handleSearchChange}
-                disabled={isSearching} placeholder="cth. 500" inputMode="numeric"
-                style={{ ...s.input, ...(searchErrors.perkiraanPeserta ? s.inputErr : {}) }} />
-            </Field>
-          </div>
+          <Field label="Jenis Event *" error={searchErrors.jenisEvent}>
+            <select name="jenisEvent" value={searchForm.jenisEvent} onChange={handleSearchChange}
+              disabled={isSearching}
+              style={{ ...s.input, ...s.selectInput, ...(searchErrors.jenisEvent ? s.inputErr : {}) }}>
+              <option value="">— Pilih jenis event —</option>
+              {JENIS_EVENT_OPTIONS.map(o => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+            </select>
+          </Field>
           <Field label="Catatan Event *" error={searchErrors.catatanEvent}
             hint={`${searchForm.catatanEvent.length} / ${CATATAN_MAX} karakter (min ${CATATAN_MIN})`}>
             <textarea name="catatanEvent" value={searchForm.catatanEvent} onChange={handleSearchChange}
@@ -187,6 +234,9 @@ export default function CariSponsor() {
           {state.searchPhase === 'error' && (
             <div style={s.errorBanner}>
               ⚠ {state.searchError}
+              <button type="button" style={s.linkBtn} onClick={doSearch} disabled={isSearching}>
+                {isSearching ? 'Mencoba...' : 'Coba Lagi'}
+              </button>
               <button type="button" style={s.linkBtn} onClick={() => setShowDebug(v => !v)}>
                 {showDebug ? 'Sembunyikan Debug' : 'Lihat Debug'}
               </button>
@@ -291,20 +341,19 @@ export default function CariSponsor() {
 
           <form onSubmit={handleGenerateDraft} noValidate>
             <Block title="Konteks Event">
-              <div style={s.formGrid}>
-                <Field label="Jenis Event *" error={campErrors.jenisEvent}>
-                  <input name="jenisEvent" value={campForm.jenisEvent} onChange={handleCampChange}
-                    style={{ ...s.input, ...(campErrors.jenisEvent ? s.inputErr : {}) }} />
-                </Field>
-                <Field label="Perkiraan Peserta *" error={campErrors.perkiraanPeserta}>
-                  <input name="perkiraanPeserta" value={campForm.perkiraanPeserta} onChange={handleCampChange}
-                    inputMode="numeric"
-                    style={{ ...s.input, ...(campErrors.perkiraanPeserta ? s.inputErr : {}) }} />
-                </Field>
+              <div style={s.lockedRow}>
+                <span style={s.lockedLabel}>Jenis Event</span>
+                <span style={s.lockedValue}>{campForm.jenisEvent || '—'}</span>
               </div>
-              <Field label="Catatan Event *" error={campErrors.catatanEvent}>
-                <textarea name="catatanEvent" value={campForm.catatanEvent} onChange={handleCampChange}
-                  rows={3} style={{ ...s.input, ...s.textarea, ...(campErrors.catatanEvent ? s.inputErr : {}) }} />
+              <div style={s.lockedRow}>
+                <span style={s.lockedLabel}>Catatan Event</span>
+                <span style={s.lockedValue}>{campForm.catatanEvent || '—'}</span>
+              </div>
+              <Field label="Estimasi Peserta *" error={campErrors.perkiraanPeserta}
+                hint="Jumlah perkiraan peserta acara (angka, minimal 10)">
+                <input name="perkiraanPeserta" value={campForm.perkiraanPeserta} onChange={handleCampChange}
+                  inputMode="numeric" placeholder="cth. 500"
+                  style={{ ...s.input, ...(campErrors.perkiraanPeserta ? s.inputErr : {}) }} />
               </Field>
             </Block>
 
@@ -331,14 +380,9 @@ export default function CariSponsor() {
                 <textarea name="kebutuhanSponsorship" value={campForm.kebutuhanSponsorship} onChange={handleCampChange}
                   rows={3} style={{ ...s.input, ...s.textarea, ...(campErrors.kebutuhanSponsorship ? s.inputErr : {}) }} />
               </Field>
-              <div style={s.formGrid}>
-                <Field label="Deadline Respons">
-                  <input type="date" name="deadlineRespons" value={campForm.deadlineRespons} onChange={handleCampChange} style={s.input} />
-                </Field>
-                <Field label="Informasi Tambahan">
-                  <input name="informasiTambahan" value={campForm.informasiTambahan} onChange={handleCampChange} style={s.input} />
-                </Field>
-              </div>
+              <Field label="Informasi Tambahan">
+                <input name="informasiTambahan" value={campForm.informasiTambahan} onChange={handleCampChange} style={s.input} />
+              </Field>
             </Block>
 
             <Block title="Penanggung Jawab (PIC)">
@@ -346,6 +390,11 @@ export default function CariSponsor() {
                 <Field label="Nama PIC *" error={campErrors.namaPIC}>
                   <input name="namaPIC" value={campForm.namaPIC} onChange={handleCampChange}
                     style={{ ...s.input, ...(campErrors.namaPIC ? s.inputErr : {}) }} />
+                </Field>
+                <Field label="Jabatan PIC">
+                  <input name="jabatanPIC" value={campForm.jabatanPIC} onChange={handleCampChange}
+                    placeholder="cth. Ketua Panitia"
+                    style={s.input} />
                 </Field>
                 <Field label="Kontak PIC *" error={campErrors.kontakPIC}>
                   <input name="kontakPIC" value={campForm.kontakPIC} onChange={handleCampChange}
@@ -388,11 +437,48 @@ export default function CariSponsor() {
                   ← Lihat Draft ({state.drafts.length})
                 </button>
               )}
+              <button type="button" style={s.btnSecondaryLg} onClick={() => setShowManual(v => !v)}>
+                {showManual ? '✎ Tutup Draft Manual' : '✎ Buat Draft Manual'}
+              </button>
               <button type="submit" style={s.btnPrimaryLg}>
                 {hasDrafts ? '↺ Generate Ulang Draft →' : '✉ Generate Draft Email →'}
               </button>
             </div>
           </form>
+
+          {showManual && (
+            <form onSubmit={handleManualSubmit} noValidate style={s.manualBox}>
+              <p style={s.manualTitle}>Draft Manual — tulis dengan bahasamu sendiri</p>
+              <p style={s.manualHint}>
+                AI akan merapikan bahasanya tanpa mengubah placeholder. Klik chip untuk menyisipkan placeholder resmi:
+              </p>
+              <div style={s.chipsRow}>
+                {PLACEHOLDER_WHITELIST.map(p => (
+                  <button key={p} type="button" style={s.chipBtn} onClick={() => insertManualPlaceholder(p)}>
+                    [{p}]
+                  </button>
+                ))}
+              </div>
+              <Field label="Subjek (boleh berisi placeholder)">
+                <input value={manualSubject} onChange={e => setManualSubject(e.target.value)}
+                  disabled={manualSending}
+                  placeholder="cth. Penawaran Sponsorship [nama_acara] untuk [nama_perusahaan]"
+                  style={s.input} />
+              </Field>
+              <Field label="Isi Email *">
+                <textarea ref={manualBodyRef} value={manualBody} onChange={e => setManualBody(e.target.value)}
+                  disabled={manualSending} rows={12}
+                  placeholder="Tulis draft email di sini, pakai placeholder seperti [nama_perusahaan], [nama_acara], [nama_pic]..."
+                  style={{ ...s.input, ...s.textarea }} />
+              </Field>
+              {manualError && <p style={s.errText}>{manualError}</p>}
+              <div style={s.campActions}>
+                <button type="submit" style={s.btnPrimaryLg} disabled={manualSending}>
+                  {manualSending ? 'Memproses ke AI...' : 'Kirim ke AI →'}
+                </button>
+              </div>
+            </form>
+          )}
         </div>
       )}
     </div>
@@ -521,6 +607,14 @@ const s = {
   },
   inputErr: { borderColor: 'var(--state-danger)' },
   textarea: { resize: 'vertical' },
+  selectInput: { cursor: 'pointer' },
+  lockedRow: { marginBottom: 12 },
+  lockedLabel: { display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-2)', marginBottom: 5 },
+  lockedValue: {
+    display: 'block', fontSize: 14, color: 'var(--text-1)',
+    background: 'var(--surface-muted)', border: '1px solid var(--border-subtle)',
+    borderRadius: 8, padding: '9px 12px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+  },
   hint: { fontSize: 12, color: 'var(--text-3)', marginTop: 3 },
   errText: { fontSize: 12, color: 'var(--state-danger)', marginTop: 3 },
 
@@ -554,6 +648,18 @@ const s = {
   btnSecondaryLg: {
     padding: '12px 28px', background: 'var(--surface-muted)', color: 'var(--text-2)',
     border: '1px solid var(--border-subtle)', borderRadius: 9999, cursor: 'pointer', fontSize: 14, fontWeight: 600,
+  },
+  manualBox: {
+    marginTop: 16, background: 'var(--page)', border: '1px dashed var(--border-strong)',
+    borderRadius: 10, padding: 20,
+  },
+  manualTitle: { fontSize: 14, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 4px' },
+  manualHint: { fontSize: 12, color: 'var(--text-3)', margin: '0 0 10px' },
+  chipsRow: { display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 },
+  chipBtn: {
+    fontSize: 11, fontFamily: 'monospace', padding: '3px 9px', borderRadius: 9999,
+    border: '1px solid var(--brand-200)', background: 'var(--brand-50)', color: 'var(--brand-600)',
+    cursor: 'pointer',
   },
 
   summaryBanner: {

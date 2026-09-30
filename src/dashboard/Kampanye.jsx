@@ -22,7 +22,6 @@ export default function Kampanye({ backPath }) {
     emailPIC: cam.emailPIC || '',
     websiteAcara: cam.websiteAcara || '',
     linkProposal: cam.linkProposal || '',
-    deadlineRespons: cam.deadlineRespons || '',
     // Shared from search
     jenisEvent: cam.jenisEvent || state.search.jenisEvent || '',
     perkiraanPeserta: cam.perkiraanPeserta || state.search.perkiraanPeserta || '',
@@ -97,9 +96,6 @@ export default function Kampanye({ backPath }) {
           </Field>
           <Field label="Informasi Tambahan">
             <textarea name="informasiTambahan" value={form.informasiTambahan} onChange={handleChange} rows={2} style={{ ...s.input, ...s.textarea }} />
-          </Field>
-          <Field label="Deadline Respons">
-            <input type="date" name="deadlineRespons" value={form.deadlineRespons} onChange={handleChange} style={s.input} />
           </Field>
         </Section>
 

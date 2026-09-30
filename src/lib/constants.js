@@ -76,3 +76,25 @@ export const JENIS_EVENT_OPTIONS = [
 // ── Langflow flow IDs ─────────────────────────────────────────────────────────
 export const FLOW_SEARCH = import.meta.env.VITE_LANGFLOW_SEARCH_FLOW_ID || '5d9c3617'
 export const FLOW_DRAFT = import.meta.env.VITE_LANGFLOW_DRAFT_FLOW_ID || '45313891'
+
+// ── Debug panel visibility (Pengaturan → Debug Panel) ─────────────────────────
+// Mode tersimpan di localStorage 'sf_debug': 'always' | 'never' | 'env'.
+// 'env' mengikuti VITE_DEBUG_LANGFLOW=true.
+export function getDebugMode() {
+  try {
+    return localStorage.getItem('sf_debug') || 'env'
+  } catch {
+    return 'env'
+  }
+}
+
+export function isDebugEnabled() {
+  const mode = getDebugMode()
+  if (mode === 'always') return true
+  if (mode === 'never') return false
+  try {
+    return String(import.meta.env.VITE_DEBUG_LANGFLOW || '').toLowerCase() === 'true'
+  } catch {
+    return false
+  }
+}

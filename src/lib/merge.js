@@ -20,14 +20,14 @@ export function parseSearchOutput(candidates) {
       const start = clean.indexOf('{')
       const end = clean.lastIndexOf('}')
       if (start === -1 || end === -1) {
-        counts.push({ index: i, valid: 0, dropped: 0, ok: false })
+        counts.push({ index: i, valid: 0, dropped: 0, ok: false, levels: {} })
         continue
       }
       clean = clean.slice(start, end + 1)
 
       const parsed = JSON.parse(clean)
       if (!parsed.sponsor || !Array.isArray(parsed.sponsor)) {
-        counts.push({ index: i, valid: 0, dropped: 0, ok: false })
+        counts.push({ index: i, valid: 0, dropped: 0, ok: false, levels: {} })
         continue
       }
 
@@ -38,7 +38,15 @@ export function parseSearchOutput(candidates) {
         .map(s => normalizeSponsors(s))
         .slice(0, MAX_SPONSORS)
 
-      counts.push({ index: i, valid: sponsors.length, dropped: rawCount - named.length, ok: sponsors.length > 0 })
+      // Histogram level relevansi — untuk diagnosa sebaran per kandidat
+      // (mis. prose lengkap tapi JSON hanya skor atas = parser memfilter)
+      const levels = {}
+      for (const s of sponsors) {
+        const lv = s.relevance_level || '?'
+        levels[lv] = (levels[lv] || 0) + 1
+      }
+
+      counts.push({ index: i, valid: sponsors.length, dropped: rawCount - named.length, ok: sponsors.length > 0, levels })
       if (sponsors.length === 0) continue
 
       if (!best || sponsors.length > best.sponsors.length) {
@@ -52,7 +60,7 @@ export function parseSearchOutput(candidates) {
       // Can't do better than the cap — stop early
       if (best.sponsors.length >= MAX_SPONSORS) break
     } catch {
-      counts.push({ index: i, valid: 0, dropped: 0, ok: false, parseError: true })
+      counts.push({ index: i, valid: 0, dropped: 0, ok: false, levels: {}, parseError: true })
       continue
     }
   }

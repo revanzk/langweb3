@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/store.jsx'
 import { validateCampaign } from '../lib/validators.js'
-import { RELEVANCE_LEVEL_LIST, TONE_OPTIONS, JENIS_EVENT_OPTIONS } from '../lib/constants.js'
+import { RELEVANCE_LEVEL_LIST, TONE_OPTIONS, JENIS_EVENT_OPTIONS, getDebugMode, isDebugEnabled } from '../lib/constants.js'
 import { PLACEHOLDER_WHITELIST } from '../lib/merge.js'
 import DebugPanel from '../components/DebugPanel.jsx'
 
@@ -31,8 +31,9 @@ export default function CariSponsor() {
     catatanEvent: state.search.catatanEvent || '',
   })
   const [searchErrors, setSearchErrors] = useState({})
-  const [showDebug, setShowDebug] = useState(false)
+  const [showDebug, setShowDebug] = useState(() => isDebugEnabled())
   const isSearching = state.searchPhase === 'searching' || state.searchPhase === 'waiting'
+  const debugMode = getDebugMode()
 
   // ── Hasil filters ───────────────────────────────────────────────────────────
   const [filter, setFilter] = useState('Semua')
@@ -111,6 +112,7 @@ export default function CariSponsor() {
     // Persist to store after successful validation
     dispatch({ type: 'SET_SEARCH', payload: searchForm })
     if (!result.ok) { setShowDebug(true); return }
+    if (isDebugEnabled()) setShowDebug(true)
     setTimeout(() => hasilRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
   }
 
@@ -267,6 +269,11 @@ export default function CariSponsor() {
           )}
 
           <div style={s.searchActions}>
+            {state.lastRun && debugMode !== 'never' && (
+              <button type="button" style={s.linkBtn} onClick={() => setShowDebug(v => !v)}>
+                {showDebug ? 'Sembunyikan Debug' : 'Lihat Debug'}
+              </button>
+            )}
             <button type="submit" style={s.btnPrimary} disabled={isSearching}>
               {isSearching ? 'Mencari...' : hasResults ? '↺ Cari Ulang' : 'Cari Sponsor →'}
             </button>

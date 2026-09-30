@@ -31,6 +31,24 @@ export default function DebugPanel({ data, onClose }) {
         <Row label="Dipilih" value={data.chosenIndex >= 0 ? `Index ${data.chosenIndex}` : 'Tidak ada'} />
       </div>
 
+      {Array.isArray(data.counts) && data.counts.length > 0 && (
+        <div style={s.block}>
+          <p style={s.blockLabel}>Sebaran per kandidat:</p>
+          {data.counts.map((c, i) => (
+            <div key={i} style={s.row}>
+              <span style={s.rowLabel}>Kandidat {c.index + 1}</span>
+              <span style={s.rowVal}>
+                {c.valid} valid{c.dropped > 0 ? `, ${c.dropped} dibuang` : ''}{c.parseError ? ', gagal parse' : ''}
+                {c.levels && Object.keys(c.levels).length > 0
+                  ? ` (${Object.entries(c.levels).map(([lv, n]) => `${n} ${lv}`).join(' + ')})`
+                  : ''}
+                {c.index === data.chosenIndex ? ' ✓ dipilih' : ''}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {data.input && (
         <div style={s.block}>
           <p style={s.blockLabel}>Input Dikirim:</p>

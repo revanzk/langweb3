@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useStore } from '../store/store.jsx'
-import { DELIVERY } from '../lib/constants.js'
+import { DELIVERY, getDebugMode, isDebugEnabled } from '../lib/constants.js'
 import DebugPanel from '../components/DebugPanel.jsx'
 
 // Track which campaign+sponsors combo was last generated so we can detect "new"
@@ -20,7 +20,8 @@ export default function Draft() {
   const location = useLocation()
   const [activeTab, setActiveTab] = useState(0)
   const [editMode, setEditMode] = useState(false)
-  const [showDebug, setShowDebug] = useState(false)
+  const [showDebug, setShowDebug] = useState(() => isDebugEnabled())
+  const debugMode = getDebugMode()
   const [regenName, setRegenName] = useState(null)
   const [regenAll, setRegenAll] = useState(false)
   const [regenError, setRegenError] = useState(null)
@@ -252,6 +253,14 @@ export default function Draft() {
               ← Kembali
             </button>
           </div>
+        </div>
+      )}
+
+      {state.lastRun && debugMode !== 'never' && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button style={s.linkBtn} onClick={() => setShowDebug(v => !v)}>
+            {showDebug ? 'Sembunyikan Debug' : 'Lihat Debug'}
+          </button>
         </div>
       )}
 

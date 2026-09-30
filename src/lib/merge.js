@@ -94,116 +94,197 @@ export function parseDraftOutput(text) {
   return { subject, body }
 }
 
-// ── Fuzzy placeholder merger ──────────────────────────────────────────────────
-const STOPWORDS = /\b(masukkan|isi|tulis|cantumkan|silakan|harap|mohon|di sini|berikut|tersebut|yang)\b/gi
+// ── Fuzzy placeholder merger (toleran lebar) ────────────────────────────────────
+// Mendukung [..], {..}, {{..}}, [[..]], snake_case, EN/ID synonym, typo ringan.
+export const PLACEHOLDER_RE = /[\[{]+([^\[\]{}]+)[\]}]+/g
+
+const STOPWORDS = /\b(masukkan|isi|tulis|cantumkan|silakan|harap|mohon|di sini|berikut|tersebut|yang|please|enter|write|fill)\b/gi
 
 function normalize(str) {
   return str
     .toLowerCase()
-    .replace(/[/\-]/g, ' ')
+    .replace(/[_\-/]+/g, ' ')
     .replace(STOPWORDS, '')
     .replace(/\s+/g, ' ')
     .trim()
 }
 
+// Cek apakah token ternormalisasi memuat salah satu kata (word-boundary aware
+// untuk token pendek seperti wa/hp/cp/pj agar "bawa" tidak match).
+function hasWord(norm, ...words) {
+  return words.some(w => {
+    if (w.length <= 3) return new RegExp(`\\b${w}\\b`, 'i').test(norm)
+    return norm.includes(w)
+  })
+}
+
+function hasAll(norm, ...words) {
+  return words.every(w => hasWord(norm, w))
+}
+
+function hasAny(norm, ...words) {
+  return words.some(w => hasWord(norm, w))
+}
+
 /**
- * Build fallback map from campaign + sponsor data.
- * Returns Map<bracketToken, replacementValue>
+ * Klasifikasi placeholder ternormalisasi ke kunci kanonis.
+ * Urutan spesifik → umum. Return null bila tidak dikenal.
  */
-function buildFallbackMap(campaign, sponsor) {
-  return {
-    // Company name — multiple phrasings
-    company: {
-      patterns: [/nama perusahaan sponsor/i, /nama perusahaan/i, /nama sponsor/i],
-      value: sponsor?.sponsor_name || null,
-    },
-    location: {
-      patterns: [/kota[/ ]?(?:perusahaan|sponsor|lokasi)?/i, /lokasi/i, /domisili/i],
-      value: sponsor?.location || 'Indonesia',
-    },
-    industry: {
-      patterns: [/industri|bidang|sektor/i],
-      value: sponsor?.industry || 'perusahaan terkemuka di bidangnya',
-    },
-    deadline: {
-      patterns: [/tanggal deadline|deadline|tenggat/i],
-      value: campaign?.deadlineRespons
+function classifyPlaceholder(norm) {
+  if (!norm) return null
+
+  // 1. Company: (nama|name) + (perusahaan|company|corp|pt|sponsor) atau tunggal
+  //    Contoh: {nama_perusahaan}, {name_perusahaan}, {nama_perusahaan_sponsor},
+  //    {{company_name}}, [Nama Perusahaan Sponsor], {sponsor}, {perusahaan}
+  if (
+    (hasAny(norm, 'nama', 'name') && hasAny(norm, 'perusahaan', 'company', 'corp', 'pt', 'sponsor')) ||
+    ['perusahaan', 'company', 'sponsor', 'nama sponsor', 'sponsor name', 'company name', 'nama perusahaan'].includes(norm)
+  ) {
+    return 'company'
+  }
+
+  // 2. Contact email perusahaan — harus sebelum email PIC generik
+  if (hasWord(norm, 'email') && hasAny(norm, 'perusahaan', 'company', 'sponsor')) return 'contactEmail'
+  if (hasAll(norm, 'kontak', 'email')) return 'contactEmail'
+
+  // 3. Kontak PIC: nomor/telepon/WA/HP/CP/PJ/contact/phone
+  if (
+    hasAny(norm, 'kontak', 'contact', 'telepon', 'telp', 'telephone', 'phone', 'whatsapp', 'wa', 'hp', 'cp', 'pj', 'nomor', 'number', 'nowa') ||
+    (hasWord(norm, 'no') && hasAny(norm, 'hp', 'wa', 'telp', 'kontak', 'telepon'))
+  ) {
+    return 'kontakPIC'
+  }
+
+  // 4. Nama PIC: (nama|name) + (anda|you|your|pic|penanggung|pengirim|sender|lengkap)
+  //    Token tunggal "nama"/"name"/"nama lengkap" → PIC (bukan perusahaan).
+  if (hasAny(norm, 'nama', 'name')) return 'namaPIC'
+
+  // 5. Email PIC generik
+  if (hasWord(norm, 'email') || hasWord(norm, 'mail') || hasWord(norm, 'e-mail')) return 'emailPIC'
+
+  // 6. Lokasi: kota/city/lokasi/location/domisili/alamat/address
+  if (hasAny(norm, 'kota', 'city', 'town', 'lokasi', 'location', 'domisili', 'alamat', 'address', 'kabupaten', 'provinsi', 'daerah')) {
+    return 'location'
+  }
+
+  // 7. Industri
+  if (hasAny(norm, 'industri', 'industry', 'bidang', 'field', 'sektor', 'sector', 'bisnis', 'business', 'kategori', 'vertical')) {
+    return 'industry'
+  }
+
+  // 8. Deadline (trap "batas"/"tautan" tunggal sudah disaring sebelum ini)
+  if (hasAny(norm, 'deadline', 'tenggat', 'due', 'closing', 'tenggat waktu', 'batas waktu', 'batas akhir', 'tanggal deadline')) {
+    return 'deadline'
+  }
+
+  // 9. Link proposal
+  if (hasWord(norm, 'proposal') || hasWord(norm, 'prososal')) return 'linkProposal'
+
+  // 10. Website acara
+  if (hasAny(norm, 'website', 'site', 'situs', 'web', 'url acara', 'link acara')) return 'websiteAcara'
+  if (hasAny(norm, 'tautan', 'link', 'url', 'lampiran') && hasAny(norm, 'website', 'site', 'situs', 'acara', 'event', 'resmi')) {
+    return 'websiteAcara'
+  }
+
+  return null
+}
+
+function resolveValue(key, campaign, sponsor) {
+  switch (key) {
+    case 'company':
+      return sponsor?.sponsor_name || null
+    case 'location':
+      return sponsor?.location || 'Indonesia'
+    case 'industry':
+      return sponsor?.industry || 'perusahaan terkemuka di bidangnya'
+    case 'deadline':
+      return campaign?.deadlineRespons
         ? new Date(campaign.deadlineRespons).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
-        : 'yang akan kami konfirmasi lebih lanjut',
-    },
-    namaPIC: {
-      patterns: [/nama anda|nama.*pic|penanggung/i],
-      value: campaign?.namaPIC || null,
-    },
-    kontakPIC: {
-      patterns: [/nomor kontak|kontak anda|nomor telepon|whatsapp|telp|\bwa\b|\bhp\b|\bcp\b|\bpj\b/i],
-      value: campaign?.kontakPIC || null,
-    },
-    emailPIC: {
-      patterns: [/alamat email|email anda|email.*pic/i],
-      value: campaign?.emailPIC || null,
-    },
-    linkProposal: {
-      patterns: [/tautan.*proposal|link.*proposal/i],
-      value: campaign?.linkProposal || 'akan kami kirimkan menyusul',
-    },
-    websiteAcara: {
-      patterns: [/tautan.*website|link.*website|website resmi/i],
-      value: campaign?.websiteAcara || 'website resmi acara kami',
-    },
-    contactEmail: {
-      patterns: [/email.*perusahaan|kontak.*email/i],
-      value: sponsor?.contact_email || 'email resmi perusahaan',
-    },
+        : 'yang akan kami konfirmasi lebih lanjut'
+    case 'namaPIC':
+      return campaign?.namaPIC || null
+    case 'kontakPIC':
+      return campaign?.kontakPIC || null
+    case 'emailPIC':
+      return campaign?.emailPIC || null
+    case 'linkProposal':
+      return campaign?.linkProposal || 'akan kami kirimkan menyusul'
+    case 'websiteAcara':
+      return campaign?.websiteAcara || 'website resmi acara kami'
+    case 'contactEmail':
+      return sponsor?.contact_email || 'email resmi perusahaan'
+    default:
+      return null
   }
 }
 
-// Tokens that must STAY as leftovers — never auto-fill
+// Tokens that must STAY as leftovers — never auto-fill (dicek versi normalized)
 const TRAP_PATTERNS = [
   /^nomor rekening$/i,
+  /^no rekening$/i,
   /^paket sponsorship$/i,
+  /^paket sponsor$/i,
   /^batas$/i,
   /^tautan$/i,
+  /^link$/i,
+  /^url$/i,
 ]
 
 function isTrapped(tokenInner) {
-  return TRAP_PATTERNS.some(p => p.test(tokenInner.trim()))
+  const norm = normalize(tokenInner)
+  return TRAP_PATTERNS.some(p => p.test(norm) || p.test(tokenInner.trim()))
 }
 
 /**
- * Merge a draft body: replace [bracket] tokens with campaign/sponsor values.
- * Returns { merged, leftovers[] }
+ * Merge teks (subject maupun body): ganti [..], {..}, {{..}} dengan
+ * data campaign/sponsor. Returns { merged, leftovers[] }
  */
-export function mergeDraft(body, campaign, sponsor) {
-  const fallbackMap = buildFallbackMap(campaign, sponsor)
+export function mergeText(text, campaign, sponsor) {
+  if (!text) return { merged: text || '', leftovers: [] }
   const leftovers = []
 
-  const merged = body.replace(/\[([^\]]+)\]/g, (match, inner) => {
+  const merged = String(text).replace(PLACEHOLDER_RE, (match, inner) => {
     if (isTrapped(inner)) {
       leftovers.push(match)
       return match
     }
 
     const norm = normalize(inner)
+    const key = classifyPlaceholder(norm)
 
-    // Try each rule in specificity order
-    for (const [, rule] of Object.entries(fallbackMap)) {
-      for (const pattern of rule.patterns) {
-        if (pattern.test(norm) || pattern.test(inner)) {
-          if (rule.value) return rule.value
-          // Required but empty
-          leftovers.push(`${match}(kosong)`)
-          return match
-        }
-      }
+    if (key) {
+      const value = resolveValue(key, campaign, sponsor)
+      if (value) return value
+      leftovers.push(`${match}(kosong)`)
+      return match
     }
 
-    // Unknown token → leftover
+    // Unknown token → leftover (blokir kirim, highlight kuning)
     leftovers.push(match)
     return match
   })
 
   return { merged, leftovers }
+}
+
+/**
+ * Merge subject + body sekaligus. Leftovers digabung (unik).
+ * Tetap diekspor sebagai mergeDraft agar kompatibel dengan pemanggil lama.
+ */
+export function mergeDraft(body, campaign, sponsor) {
+  return mergeText(body, campaign, sponsor)
+}
+
+export function mergeSubjectAndBody(subject, body, campaign, sponsor) {
+  const s = mergeText(subject || '', campaign, sponsor)
+  const b = mergeText(body || '', campaign, sponsor)
+  const seen = new Set()
+  const leftovers = [...s.leftovers, ...b.leftovers].filter(x => {
+    if (seen.has(x)) return false
+    seen.add(x)
+    return true
+  })
+  return { subject: s.merged, body: b.merged, leftovers }
 }
 
 /**

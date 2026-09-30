@@ -1,0 +1,714 @@
+import type { BaseComposioProvider } from './provider/BaseProvider';
+import ComposioClient from '@composio/client';
+import type { Logger as ClientLogger, LogLevel as ClientLogLevel } from '@composio/client';
+import { Tools } from './models/Tools';
+import { Toolkits } from './models/Toolkits';
+import { Triggers } from './models/Triggers';
+import { AuthConfigs } from './models/AuthConfigs';
+import { ConnectedAccounts } from './models/ConnectedAccounts';
+import { Experimental } from './models/Experimental';
+import { MCP } from './models/MCP';
+import { Webhooks } from './models/Webhooks';
+import { Logs } from './models/Logs';
+import { SessionConfigs } from './models/SessionConfigs';
+import { Keyring } from './models/Keyring';
+import { telemetry } from './telemetry/Telemetry';
+import {
+  getScopeHeaders,
+  getSDKConfig,
+  getToolkitVersionsFromEnv,
+  getUserApiKeyHeader,
+  resolveSDKScope,
+  resolveUserApiKey,
+  USER_API_KEY_HEADER,
+} from './utils/sdk';
+import logger from './utils/logger';
+import type { ComposioLogger, LogLevel } from './utils/logger';
+import { IS_DEVELOPMENT_OR_CI } from './utils/constants';
+import { checkForLatestVersionFromNPM } from './utils/version';
+import { OpenAIProvider } from './provider/OpenAIProvider';
+import { version } from '../package.json';
+import type { ComposioRequestHeaders } from './types/composio.types';
+import type { ComposioRequestOptions } from './types/requestOptions.types';
+import { Files } from '#files';
+import { getDefaultHeaders } from './utils/session';
+import { ToolkitVersionParam } from './types/tool.types';
+import { ToolRouter } from './models/ToolRouter';
+import { Sessions } from './models/Sessions';
+import { CONFIG_DEFAULTS } from './utils/config-defaults';
+import { expandHomeAndResolve, expandHomeAndResolveMany } from './utils/fileDirs';
+export type ComposioConfig<
+  TProvider extends BaseComposioProvider<unknown, unknown, unknown> = OpenAIProvider,
+> = {
+  /**
+   * The project API key for the Composio API, sent as the `x-api-key` header.
+   *
+   * - A string is used as-is; the environment and the CLI user config file are not consulted.
+   * - Omitted: falls back to `COMPOSIO_API_KEY`, then to the project key stored by the Composio
+   *   CLI in `~/.composio/user_data.json`. A stored user key (`uak_...`) is never used as a
+   *   project key; the SDK throws instead of sending it.
+   * - `null`: disables project-key authentication entirely, including both fallbacks. The SDK
+   *   then requires another credential (`userApiKey`, `orgApiKey`, or an `x-user-api-key`
+   *   entry in `defaultHeaders`) and sends no `x-api-key`; an `x-api-key` entry in
+   *   `defaultHeaders` is rejected, also on `createSession()` clones.
+   *
+   * @example 'ak_1234567890'
+   */
+  apiKey?: string | null;
+  /**
+   * User API key (`uak_*`) for the organization, consumer, and user-scoped
+   * endpoints reached through `getClient()` (for example `client.org.list()`).
+   * Sent as `x-user-api-key` only on operations whose security scheme accepts
+   * it, never alongside the project key. Falls back to
+   * `process.env['COMPOSIO_USER_API_KEY']`; `null` disables that fallback.
+   * Combine with `apiKey: null` to authenticate with the user key alone.
+   * @example 'uak_1234567890'
+   */
+  userApiKey?: string | null;
+  /**
+   * Organization API key (`oak_*`) for the organization-owner endpoints reached
+   * through `getClient()` (for example `client.org.owner.project.list()`).
+   * Sent as `x-org-api-key` only on operations whose security scheme accepts
+   * it, never alongside the project key. Falls back to
+   * `process.env['COMPOSIO_ORG_API_KEY']`; `null` disables that fallback.
+   * Combine with `apiKey: null` to authenticate with the organization key alone.
+   * @example 'oak_1234567890'
+   */
+  orgApiKey?: string | null;
+  /**
+   * Organization nano ID that scopes user-key requests, sent as the
+   * `x-org-id` header on every request and exported with the session MCP
+   * config. This is the short public identifier the API returns as `org_id`
+   * (for example from the consumer project resolve endpoint), not a UUID.
+   * Must be supplied together with `projectId`; without an explicit scope a
+   * user API key addresses the API default (the developer project). May also
+   * be supplied as the `x-org-id` entry in `defaultHeaders`; the two must
+   * agree.
+   * @example 'org_9f2k1x'
+   */
+  orgId?: string;
+  /**
+   * Project nano ID that scopes user-key requests, sent as the
+   * `x-project-id` header on every request and exported with the session MCP
+   * config. This is the short public identifier the API returns as
+   * `project_nano_id`, not the project UUID. Must be supplied together with
+   * `orgId`. May also be supplied as the `x-project-id` entry in
+   * `defaultHeaders`; the two must agree.
+   * @example 'proj_4b8m2q'
+   */
+  projectId?: string;
+  /**
+   * The base URL of the Composio API.
+   * @example 'https://backend.composio.dev'
+   */
+  baseURL?: string | null;
+  /**
+   * Whether to allow tracking for the Composio instance.
+   * @example true, false
+   * @default true
+   */
+  allowTracking?: boolean;
+  /**
+   * Opt in to automatic file upload and download during tool execution (reads local paths
+   * and fetches URLs marked as file-uploadable in tool schemas). Disabled by default.
+   * @default false
+   */
+  dangerouslyAllowAutoUploadDownloadFiles?: boolean;
+  /**
+   * When true, local file paths for auto-upload and `files.upload` are checked against
+   * a built-in denylist of sensitive path segments (e.g. `.ssh`, `.aws`) and
+   * credential-like file names (e.g. `.env`, default SSH private key names). URLs and
+   * {@link File} objects are not path-checked.
+   * @default true
+   */
+  sensitiveFileUploadProtection?: boolean;
+  /**
+   * Extra path components (a single directory or file name) to treat as sensitive when
+   * they appear anywhere in the resolved path. Merged with the built-in list.
+   */
+  fileUploadPathDenySegments?: string[];
+  /**
+   * Allowlist of directories from which the SDK is allowed to read local files
+   * during **automatic** file upload (when
+   * `dangerouslyAllowAutoUploadDownloadFiles: true`). Manual
+   * `composio.files.upload()` calls are NOT subject to this allowlist.
+   *
+   * - `undefined` (default) → `[<home>/.composio/temp]`.
+   * - `false` → reject every local path during auto-upload. URLs
+   *   (`http(s)://...`) and `File`/`Blob` objects continue to work.
+   * - `string[]` (non-empty) → use as the allowlist. A file is accepted iff
+   *   its symlink-resolved absolute path is inside one of these directories
+   *   on a path-component boundary (so `/tmp/foo` allows `/tmp/foo/bar` but
+   *   NOT `/tmp/foo-bar`).
+   * - `[]` → behaves like `false` (kept as an alias; prefer `false` for
+   *   readability).
+   * - Providing any value **replaces** the default. Include `~/.composio/temp`
+   *   in your list if you want the default staging dir to keep working.
+   * - On Windows, entries are compared case-insensitively.
+   */
+  fileUploadDirs?: string[] | false;
+  /**
+   * Directory where files downloaded during tool execution (and
+   * `composio.files.download()`) are written. Defaults to
+   * `<home>/.composio/files`. Path is expanded at SDK-init time; relative
+   * paths resolve against `process.cwd()`.
+   */
+  fileDownloadDir?: string;
+  /**
+   * The tool provider to use for this Composio instance.
+   * @example new OpenAIProvider()
+   */
+  provider?: TProvider;
+  /**
+   * The host service name of the SDK where the SDK is running.
+   * This is used to identify the host for telemetry. Ignore it if you are not using telemetry.
+   * @example 'mcp', 'apollo', ' etc
+   */
+  host?: string;
+  /**
+   * Default headers attached to every request made through this instance.
+   *
+   * `x-user-api-key` is the one header the SDK treats as a credential: together
+   * with `apiKey: null` it authenticates requests with a Composio user API key
+   * instead of a project key. The project key is only ever set from `apiKey`:
+   * an `x-api-key` entry is rejected when `apiKey` is `null`. Every other
+   * header is passed through untouched.
+   * @example
+   * ```typescript
+   * const composio = new Composio({
+   *   defaultHeaders: {
+   *      'x-request-id': '1234567890',
+   *   },
+   * });
+   * ```
+   */
+  defaultHeaders?: ComposioRequestHeaders;
+  /**
+   * Whether to disable version check for the Composio SDK.
+   * @example true, false
+   * @default false
+   */
+  disableVersionCheck?: boolean;
+  /**
+   * The versions of the toolkits to use for tool execution and retrieval.
+   * Omit to use 'latest' for all toolkits.
+   *
+   * **Version Control:**
+   * When executing tools manually (via `tools.execute()`), if this resolves to "latest",
+   * you must either:
+   * - Set `dangerouslySkipVersionCheck: true` in the execute params (not recommended for production)
+   * - Specify a concrete version here or in environment variables
+   * - Pass a specific `version` parameter to the execute call
+   *
+   * Defaults to 'latest' if nothing is provided.
+   * You can specify individual toolkit versions via environment variables: `COMPOSIO_TOOLKIT_VERSION_GITHUB=20250902_00`
+   *
+   * @example Global version for all toolkits, omit to use 'latest'
+   * ```typescript
+   * const composio = new Composio();
+   * ```
+   *
+   * @example Specific versions for different toolkits (recommended for production)
+   * ```typescript
+   * const composio = new Composio({
+   *   toolkitVersions: {
+   *     github: '20250909_00',
+   *     slack: '20250902_00'
+   *   }
+   * });
+   * ```
+   *
+   * @example Set via environment variables
+   * ```typescript
+   * // Set environment variables:
+   * // COMPOSIO_TOOLKIT_VERSION_GITHUB=20250909_00
+   * // COMPOSIO_TOOLKIT_VERSION_SLACK=20250902_00
+   * const composio = new Composio(); // Will use env variables
+   * ```
+   */
+  toolkitVersions?: ToolkitVersionParam;
+  /**
+   * Destination for SDK log output. Messages are formatted and have
+   * credential-shaped values redacted before they reach the sink, so any
+   * object with `error`/`warn`/`info`/`debug` methods works (`console`, pino,
+   * winston, ...).
+   *
+   * Runtime deprecation warnings raised by the underlying API client (response
+   * `Deprecation`/`Sunset` headers and deprecated request inputs) are routed
+   * through this logger as well.
+   *
+   * The SDK logger is process-wide: configuring it on one `Composio` instance
+   * affects every instance, and the last configured instance wins.
+   *
+   * @default console
+   * @example
+   * ```typescript
+   * const composio = new Composio({
+   *   apiKey: 'your-api-key',
+   *   logger: pino(),
+   *   logLevel: 'warn',
+   * });
+   * ```
+   */
+  logger?: ComposioLogger;
+  /**
+   * Minimum level to emit: `'silent' | 'error' | 'warn' | 'info' | 'debug'`.
+   * Takes precedence over the `COMPOSIO_LOG_LEVEL` environment variable.
+   * Also gates the API client's runtime deprecation warnings (`'silent'` turns
+   * them off). The client's per-request lifecycle logs are emitted at
+   * `'debug'` only.
+   *
+   * Like `logger`, this applies process-wide and the last configured instance
+   * wins. The API client's own level is fixed when each instance is created.
+   *
+   * @default 'info' (or `COMPOSIO_LOG_LEVEL` when set)
+   */
+  logLevel?: LogLevel;
+};
+
+/**
+ * Level for the API client given the SDK level. The client logs each request's
+ * lifecycle at `info`, which is debug-grade for SDK users, so the client stays
+ * at `warn` unless the SDK is at `debug`. The client's `LogLevel` has
+ * `'off'` where the SDK has `'silent'`.
+ */
+const toClientLogLevel = (level: LogLevel): ClientLogLevel => {
+  if (level === 'silent') return 'off';
+  if (level === 'info') return 'warn';
+  return level;
+};
+
+/**
+ * Forwards the API client's log records to the SDK singleton so they pick up
+ * the SDK's formatting, redaction, and configured sink. Methods are looked up
+ * at call time so a later `logger.configure()` is honoured. The client's
+ * `info` records (per-request lifecycle) are forwarded as SDK `debug`.
+ */
+const clientLoggerAdapter: ClientLogger = {
+  error: (...args) => logger.error(...args),
+  warn: (...args) => logger.warn(...args),
+  info: (...args) => logger.debug(...args),
+  debug: (...args) => logger.debug(...args),
+};
+
+/**
+ * This is the core class for Composio.
+ * It is used to initialize the Composio SDK and provide a global configuration.
+ */
+export class Composio<
+  TProvider extends BaseComposioProvider<unknown, unknown, unknown> = OpenAIProvider,
+> {
+  /**
+   * The Composio API client.
+   * @type {ComposioClient}
+   */
+  protected client: ComposioClient;
+
+  /**
+   * The configuration for the Composio SDK.
+   * @type {ComposioConfig<TProvider>}
+   */
+  private config: ComposioConfig<TProvider>;
+
+  /**
+   * Core models for Composio.
+   */
+
+  /** List, retrieve, and execute tools */
+  tools: Tools<unknown, unknown, TProvider>;
+  /** Retrieve toolkit metadata and authorize user connections */
+  toolkits: Toolkits;
+  /** Manage webhook triggers and event subscriptions */
+  triggers: Triggers<TProvider>;
+  /** The tool provider instance used for wrapping tools in framework-specific formats */
+  provider: TProvider;
+  /** Upload and download files */
+  files: Files;
+  /** Manage authentication configurations for toolkits */
+  authConfigs: AuthConfigs;
+  /** Manage authenticated connections */
+  connectedAccounts: ConnectedAccounts;
+  /**
+   * Manage the project's webhook subscription (`webhooks.subscriptions`) and
+   * inbound per-toolkit webhook endpoints (`webhooks.endpoints`).
+   */
+  webhooks: Webhooks;
+  /** Search and inspect tool-execution logs */
+  logs: Logs;
+  /** Public transfer keys of the organization's customer-managed keyring */
+  keyring: Keyring;
+  /**
+   * Experimental SDK methods whose shape may change in future releases.
+   * Prefer domain-specific mounts (for example
+   * `composio.connectedAccounts.updateAcl(...)`) when available; this
+   * namespace keeps compatibility aliases while APIs are experimental.
+   * Stateless experimental factories (e.g. `experimental_createTool`) stay
+   * at the top level.
+   * @experimental
+   */
+  experimental: Experimental;
+  /**
+   * Model Context Protocol server management.
+   * @deprecated Use a session's MCP endpoint instead: `composio.create(userId, { mcp: true })`
+   * returns a session that exposes `session.mcp.url` / `session.mcp.headers`. MCP is now opt-in
+   * per session; this standalone server-management API is kept only for backwards compatibility.
+   * Prefer the session MCP endpoint; do not generate new code against `composio.mcp`.
+   * See https://docs.composio.dev/docs/sessions-via-mcp
+   */
+  mcp: MCP;
+  /**
+   * Create and reuse Composio sessions.
+   *
+   * Prefer `composio.sessions.create(...)` for new code. The top-level
+   * `composio.create(...)` method is kept as an alias.
+   */
+  sessions: Sessions<unknown, unknown, TProvider>;
+  /**
+   * Read the project's saved Session configs. Apply one with
+   * `experimental.sessionConfigId` on `sessions.create()` or `session.update()`.
+   * Requires Session configs to be enabled for the project.
+   */
+  sessionConfigs: SessionConfigs;
+  /**
+   * Legacy alias for `composio.sessions`.
+   * @deprecated Use `composio.sessions` instead — `toolRouter` was renamed to `sessions` and is kept only for backwards compatibility. Prefer `composio.sessions`; do not generate new code against `composio.toolRouter`.
+   */
+  toolRouter: ToolRouter<unknown, unknown, TProvider>;
+  /**
+   * Creates a new tool router session for a user.
+   * Use `sessionPreset: SessionPreset.DIRECT_TOOLS` when all needed tools
+   * should be exposed directly; see `ToolRouterCreateSessionConfig`.
+   *
+   * @param userId {string} The user id to create the session for
+   * @param config {ToolRouterConfig} The config for the tool router session
+   * @returns {Promise<Session<TToolCollection, TTool, TProvider>>} The tool router session
+   *
+   * @example
+   * ```typescript
+   * import { Composio } from '@composio/core';
+   *
+   * const composio = new Composio();
+   * const userId = 'user_123';
+   *
+   * const session = await composio.sessions.create(userId, {
+   *  manageConnections: true,
+   * });
+   *
+   * // Backwards-compatible alias:
+   * const same = await composio.create(userId, {
+   *  manageConnections: true,
+   * });
+   *
+   * console.log(session.sessionId);
+   * console.log(session.url);
+   * console.log(session.tools());
+   * ```
+   */
+  create: Sessions<unknown, unknown, TProvider>['create'];
+
+  /**
+   * Use an existing tool router session
+   *
+   * @param id {string} The id of the session to use
+   * @param options {object} Custom tools / toolkits to attach to the session
+   * @param requestOptions {ComposioRequestOptions} Per-request cancellation
+   *   options. The supplied AbortSignal aborts the underlying session
+   *   retrieve/attach call only. Subsequent session method calls accept
+   *   their own per-call requestOptions.
+   * @returns {Promise<Session<TToolCollection, TTool, TProvider>>} The tool router session
+   */
+  use: Sessions<unknown, unknown, TProvider>['use'];
+
+  /**
+   * Creates a new instance of the Composio SDK.
+   *
+   * The constructor initializes the SDK with the provided configuration options,
+   * sets up the API client, and initializes all core models (tools, toolkits, etc.).
+   *
+   * @param {ComposioConfig<TProvider>} config - Configuration options for the Composio SDK
+   * @param {string} [config.apiKey] - The API key for authenticating with the Composio API
+   * @param {string} [config.baseURL] - The base URL for the Composio API (defaults to production URL)
+   * @param {boolean} [config.allowTracking=true] - Whether to allow anonymous usage analytics
+   * @param {TProvider} [config.provider] - The provider to use for this Composio instance (defaults to OpenAIProvider)
+   *
+   * @example
+   * ```typescript
+   * // Initialize with default configuration
+   * const composio = new Composio();
+   *
+   * // Initialize with custom API key and base URL
+   * const composio = new Composio({
+   *   apiKey: 'your-api-key',
+   *   baseURL: 'https://api.composio.dev'
+   * });
+   *
+   * // Initialize with custom provider
+   * const composio = new Composio({
+   *   apiKey: 'your-api-key',
+   *   provider: new CustomProvider()
+   * });
+   * ```
+   */
+  constructor(config?: ComposioConfig<TProvider>) {
+    const scope = resolveSDKScope({
+      orgId: config?.orgId,
+      projectId: config?.projectId,
+      defaultHeaders: config?.defaultHeaders,
+    });
+    const { baseURL: baseURLParsed, apiKey: apiKeyParsed } = getSDKConfig(
+      config?.baseURL,
+      config?.apiKey,
+      {
+        defaultHeaders: config?.defaultHeaders,
+        userApiKey: config?.userApiKey,
+        orgApiKey: config?.orgApiKey,
+      }
+    );
+
+    // The API client sends its user key only on operations whose security
+    // scheme names it, which excludes sessions. With the project key disabled
+    // the resolved user key is placed as the `x-user-api-key` default header
+    // instead, so every request carries exactly that credential and clones,
+    // the MCP export, and trigger subscriptions read the same header.
+    const userApiKey = apiKeyParsed === null ? resolveUserApiKey(config?.userApiKey) : undefined;
+    const defaultHeadersInput =
+      userApiKey !== undefined && !getUserApiKeyHeader(config?.defaultHeaders)
+        ? { ...config?.defaultHeaders, [USER_API_KEY_HEADER]: userApiKey }
+        : config?.defaultHeaders;
+
+    if (config?.logger !== undefined || config?.logLevel !== undefined) {
+      logger.configure({ level: config.logLevel, sink: config.logger });
+    }
+
+    if (IS_DEVELOPMENT_OR_CI) {
+      logger.debug(`Initializing Composio w API Key: [REDACTED] and baseURL: ${baseURLParsed}`);
+    }
+
+    /**
+     * Set the default provider, if not provided by the user.
+     */
+    this.provider = (config?.provider ?? new OpenAIProvider()) as TProvider;
+
+    /**
+     * Keep a reference to the config object.
+     * This is useful for creating a builder pattern, debugging and logging.
+     */
+    this.config = {
+      ...config,
+      baseURL: baseURLParsed,
+      apiKey: apiKeyParsed,
+      defaultHeaders: defaultHeadersInput,
+      toolkitVersions: getToolkitVersionsFromEnv(config?.toolkitVersions),
+      allowTracking: config?.allowTracking ?? CONFIG_DEFAULTS.allowTracking,
+      dangerouslyAllowAutoUploadDownloadFiles:
+        config?.dangerouslyAllowAutoUploadDownloadFiles ??
+        CONFIG_DEFAULTS.dangerouslyAllowAutoUploadDownloadFiles,
+      sensitiveFileUploadProtection: config?.sensitiveFileUploadProtection,
+      fileUploadPathDenySegments: config?.fileUploadPathDenySegments,
+      fileUploadDirs: expandHomeAndResolveMany(config?.fileUploadDirs),
+      fileDownloadDir: expandHomeAndResolve(config?.fileDownloadDir),
+      provider: config?.provider ?? this.provider,
+      orgId: scope.orgId,
+      projectId: scope.projectId,
+    };
+
+    // The resolved scope is the single source of the x-org-id / x-project-id
+    // headers: it travels via `this.config` to clones and to the MCP export.
+    const defaultHeaders = getDefaultHeaders(
+      { ...this.config.defaultHeaders, ...getScopeHeaders(scope) },
+      this.provider
+    );
+
+    /**
+     * Initialize the Composio SDK client.
+     * The client is used to make API calls to the Composio API.
+     */
+    this.client = new ComposioClient({
+      apiKey: apiKeyParsed,
+      userApiKey: config?.userApiKey,
+      orgApiKey: config?.orgApiKey,
+      baseURL: baseURLParsed,
+      defaultHeaders: defaultHeaders,
+      logger: clientLoggerAdapter,
+      logLevel: toClientLogLevel(logger.getLevel()),
+    });
+
+    // Store the resolved values, as with `apiKey`, so `getConfig()` and the
+    // `createSession()` clone carry whatever the client resolved from env
+    // rather than re-reading the environment later.
+    this.config.userApiKey = this.client.userApiKey;
+    this.config.orgApiKey = this.client.orgApiKey;
+
+    this.tools = new Tools(this.client, this.config);
+    this.mcp = new MCP(this.client);
+    this.toolkits = new Toolkits(this.client);
+    this.triggers = new Triggers(this.client, this.config);
+    this.authConfigs = new AuthConfigs(this.client);
+    this.files = new Files(this.client, {
+      sensitiveFileUploadProtection: this.config.sensitiveFileUploadProtection,
+      fileUploadPathDenySegments: this.config.fileUploadPathDenySegments,
+      fileDownloadDir: this.config.fileDownloadDir,
+    });
+    this.connectedAccounts = new ConnectedAccounts(this.client);
+    this.webhooks = new Webhooks(this.client);
+    this.logs = new Logs(this.client);
+    this.keyring = new Keyring(this.client);
+    this.experimental = new Experimental(this.client);
+    this.sessions = new Sessions(this.client, this.config);
+    this.toolRouter = this.sessions;
+    this.sessionConfigs = new SessionConfigs(this.client);
+
+    /**
+     * Initialize session aliases.
+     * Properly bind the methods to maintain the correct 'this' context.
+     */
+    // Cast: Function.prototype.bind collapses the create/use overloads to a
+    // single signature; re-assert the overloaded type. Runtime behaviour is
+    // unchanged — bind only rebinds `this`.
+    this.create = this.sessions.create.bind(this.sessions) as Composio<TProvider>['create'];
+    this.use = this.sessions.use.bind(this.sessions) as Composio<TProvider>['use'];
+
+    /**
+     * Initialize the client telemetry.
+     */
+    if (this.config.allowTracking) {
+      telemetry.setup({
+        apiKey: apiKeyParsed ?? '',
+        baseUrl: baseURLParsed ?? '',
+        isAgentic: this.provider?._isAgentic || false,
+        version: version,
+        isBrowser: typeof window !== 'undefined',
+        provider: this.provider?.name ?? 'openai',
+        host: this.config.host,
+      });
+    }
+    // instrument the composio instance
+    telemetry.instrument(this, 'Composio');
+    // instrument the provider since we are not using the provider class directly
+    telemetry.instrument(
+      this.provider,
+      this.provider.name ?? this.provider.constructor.name ?? 'unknown'
+    );
+
+    // Check for the latest version of the Composio SDK from NPM.
+    if (!this.config.disableVersionCheck) {
+      checkForLatestVersionFromNPM(version);
+    }
+  }
+
+  /**
+   * Get the Composio SDK client.
+   * @returns {ComposioClient} The Composio API client.
+   */
+  getClient(): ComposioClient {
+    if (!this.client) {
+      throw new Error('Composio client is not initialized. Please initialize it first.');
+    }
+    return this.client;
+  }
+
+  /**
+   * Get the configuration SDK is initialized with.
+   *
+   * Returns a frozen shallow clone — the SDK has already snapshotted
+   * configuration values such as `dangerouslyAllowAutoUploadDownloadFiles`,
+   * `fileUploadDirs`, and `fileDownloadDir` into its internal models, so
+   * mutating the live config object would silently no-op. Freezing makes
+   * that contract visible at the call site instead of letting the mutation
+   * appear successful.
+   *
+   * @returns {Readonly<ComposioConfig<TProvider>>} The frozen configuration
+   *   the SDK is initialized with.
+   */
+  getConfig(): Readonly<ComposioConfig<TProvider>> {
+    return Object.freeze({ ...this.config });
+  }
+
+  /**
+   * Creates a new instance of the Composio SDK with custom request options while preserving the existing configuration.
+   * This method is particularly useful when you need to:
+   * - Add custom headers for specific requests
+   * - Track request contexts with unique identifiers
+   * - Override default request behavior for a subset of operations
+   *
+   * The new instance inherits all configuration from the parent instance (apiKey, baseURL, provider, etc.)
+   * but allows you to specify custom request options that will be used for all API calls made through this session.
+   *
+   * @deprecated Will be removed in a future version of the SDK. Instead, construct a new
+   *   instance directly with the headers you need: `new Composio({ ...existingConfig, defaultHeaders })`.
+   *   For one-off overrides, pass per-call `requestOptions` where supported.
+   *
+   * @param {MergedRequestInit} fetchOptions - Custom request options to be used for all API calls in this session.
+   *                                          This follows the Fetch API RequestInit interface with additional options.
+   * @returns {Composio<TProvider>} A new Composio instance with the custom request options applied.
+   *
+   * @example
+   * ```typescript
+   * // Create a base Composio instance
+   * const composio = new Composio({
+   *   apiKey: 'your-api-key'
+   * });
+   *
+   * // Create a session with request tracking headers
+   * const composioWithCustomHeaders = composio.createSession({
+   *   headers: {
+   *     'x-request-id': '1234567890',
+   *     'x-correlation-id': 'session-abc-123',
+   *     'x-custom-header': 'custom-value'
+   *   }
+   * });
+   *
+   * // Use the session for making API calls with the custom headers
+   * await composioWithCustomHeaders.tools.list();
+   * ```
+   */
+  createSession(options?: { headers?: ComposioRequestHeaders }): Composio<TProvider> {
+    // The clone inherits the resolved credentials: the project, user, and
+    // organization keys travel via `this.config`; a user API key placed in the
+    // default headers travels via its header unless the caller overrides it.
+    const userApiKeyHeader = getUserApiKeyHeader(options?.headers)
+      ? undefined
+      : getUserApiKeyHeader(this.config.defaultHeaders);
+    const sessionHeaders = getDefaultHeaders(
+      userApiKeyHeader
+        ? { [userApiKeyHeader.name]: userApiKeyHeader.value, ...options?.headers }
+        : options?.headers,
+      this.provider
+    );
+    return new Composio({
+      ...this.config,
+      defaultHeaders: sessionHeaders,
+    });
+  }
+
+  /**
+   * Flush any pending telemetry and wait for it to complete.
+   *
+   * In Node.js-compatible environments, telemetry is automatically flushed on process exit.
+   * However, in environments like Cloudflare Workers that don't support process exit events,
+   * you should call this method manually to ensure all telemetry is sent.
+   *
+   * @returns {Promise<void>} A promise that resolves when all pending telemetry has been sent.
+   *
+   * @example
+   * ```typescript
+   * // In a Cloudflare Worker, use ctx.waitUntil to ensure telemetry is flushed
+   * export default {
+   *   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+   *     const composio = new Composio({ apiKey: env.COMPOSIO_API_KEY });
+   *
+   *     // Do your work...
+   *     const result = await composio.tools.execute(...);
+   *
+   *     // Ensure telemetry flushes before worker terminates
+   *     ctx.waitUntil(composio.flush());
+   *
+   *     return new Response(JSON.stringify(result));
+   *   }
+   * };
+   * ```
+   */
+  async flush(): Promise<void> {
+    await telemetry.flush();
+  }
+}

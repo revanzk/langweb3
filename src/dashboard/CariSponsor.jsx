@@ -107,11 +107,28 @@ export default function CariSponsor() {
     if (campErrors[name]) setCampErrors(err => ({ ...err, [name]: null }))
   }
 
+  const hasDrafts = (state.drafts || []).length > 0
+
   function handleGenerateDraft(e) {
     e.preventDefault()
     const { valid, errors } = validateCampaign(campForm)
     if (!valid) { setCampErrors(errors); return }
     dispatch({ type: 'SET_CAMPAIGN', payload: campForm })
+    if (hasDrafts) {
+      // Sudah pernah generate dan kembali: paksa regenerate di halaman draft.
+      // "Lihat Draft" (di bawah) navigasi tanpa force sehingga draft lama dipakai ulang.
+      dispatch({ type: 'SET_DRAFT_PHASE', payload: 'idle' })
+      dispatch({ type: 'SET_DRAFTS', drafts: [] })
+      navigate('/app/cari-sponsor/draft', { state: { force: true } })
+    } else {
+      navigate('/app/cari-sponsor/draft')
+    }
+  }
+
+  function handleViewDraft() {
+    const { valid } = validateCampaign(campForm)
+    // Tetap simpan kampanye agar kembali ke draft konsisten, tapi jangan clear/force.
+    if (valid) dispatch({ type: 'SET_CAMPAIGN', payload: campForm })
     navigate('/app/cari-sponsor/draft')
   }
 
@@ -366,8 +383,13 @@ export default function CariSponsor() {
             </Block>
 
             <div style={s.campActions}>
+              {hasDrafts && (
+                <button type="button" style={s.btnSecondaryLg} onClick={handleViewDraft}>
+                  ← Lihat Draft ({state.drafts.length})
+                </button>
+              )}
               <button type="submit" style={s.btnPrimaryLg}>
-                ✉ Generate Draft Email →
+                {hasDrafts ? '↺ Generate Ulang Draft →' : '✉ Generate Draft Email →'}
               </button>
             </div>
           </form>
@@ -529,6 +551,10 @@ const s = {
     padding: '12px 32px', background: 'var(--brand-500)', color: '#fff',
     border: 'none', borderRadius: 9999, cursor: 'pointer', fontSize: 15, fontWeight: 700,
   },
+  btnSecondaryLg: {
+    padding: '12px 28px', background: 'var(--surface-muted)', color: 'var(--text-2)',
+    border: '1px solid var(--border-subtle)', borderRadius: 9999, cursor: 'pointer', fontSize: 14, fontWeight: 600,
+  },
 
   summaryBanner: {
     background: 'var(--brand-50)', border: '1px solid var(--brand-200)',
@@ -611,7 +637,7 @@ const s = {
 
   toneRow: { display: 'flex', gap: 20 },
   toneLabel: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer' },
-  campActions: { display: 'flex', justifyContent: 'flex-end', marginTop: 8 },
+  campActions: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 8 },
 }
 
 const bc = {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useStore } from '../store/store.jsx'
 import { DELIVERY } from '../lib/constants.js'
 import DebugPanel from '../components/DebugPanel.jsx'
@@ -12,28 +12,38 @@ function makeDraftKey(campaign, selected) {
 export default function Draft() {
   const {
     state, dispatch, selectedSponsors,
-    runDraft, regenerateDraft, remergeDrafts, updateDraft,
+    runDraft, regenerateDraft, regenerateManyDrafts, updateDraft,
     enqueueDrafts, sendQueue, retryQueueItem,
     refreshComposio, linkComposio, pollComposioAccount,
   } = useStore()
   const navigate = useNavigate()
+  const location = useLocation()
   const [activeTab, setActiveTab] = useState(0)
   const [editMode, setEditMode] = useState(false)
   const [showDebug, setShowDebug] = useState(false)
+  const [regenName, setRegenName] = useState(null)
+  const [regenAll, setRegenAll] = useState(false)
+  const [regenError, setRegenError] = useState(null)
   const pollRef = useRef(null)
   const didGenerate = useRef(false)
 
-  // Auto-generate on mount — always regenerate when campaign/selection changed
+  // Auto-generate on mount — regenerate saat campaign/seleksi berubah
+  // atau saat navigasi membawa state { force: true } (tombol Generate Ulang
+  // dari halaman cari-sponsor). Tombol "Lihat Draft" tidak membawa force
+  // sehingga draft lama dipakai ulang tanpa regenerate.
   useEffect(() => {
     if (!didGenerate.current && selectedSponsors.length > 0) {
       didGenerate.current = true
       const currentKey = makeDraftKey(state.campaign, state.selected)
       const lastKey = state.lastDraftKey || ''
-      if (currentKey !== lastKey || state.drafts.length === 0) {
-        // New campaign or new selection — clear old drafts and regenerate
+      const force = location.state?.force === true
+      if (force || currentKey !== lastKey || state.drafts.length === 0) {
+        // New campaign / new selection / force — clear old drafts and regenerate
         dispatch({ type: 'SET_DRAFT_PHASE', payload: 'idle' })
         dispatch({ type: 'SET_DRAFTS', drafts: [] })
         runDraft(currentKey)
+        // Hapus flag force agar back-forward tidak trigger ulang
+        if (force) window.history.replaceState({}, '')
       }
     }
   }, [])
@@ -57,12 +67,51 @@ export default function Draft() {
 
   function renderBodyWithHighlights(body) {
     if (!body) return null
-    const parts = body.split(/(\[[^\]]+\])/g)
+    // Pecah dengan regex universal agar [..], {..}, {{..}} semua ter-highlight.
+    // Hindari capture-group ganda dari PLACEHOLDER_RE (inner group ikut ter-split).
+    const splitRe = /([\[{]+[^\[\]{}]+[\]}]+)/g
+    const testRe = /^[\[{]+[^\[\]{}]+[\]}]+$/
+    const parts = body.split(splitRe)
     return parts.map((p, i) =>
-      /^\[.+\]$/.test(p)
+      testRe.test(p)
         ? <mark key={i} style={s.highlight}>{p}</mark>
         : <span key={i}>{p}</span>
     )
+  }
+
+  const failedNames = drafts.filter(d => !d.subject && !d.body).map(d => d.sponsor_name)
+  const hasFailed = state.draftPhase === 'error' || failedNames.length > 0
+
+  async function handleRegenActive() {
+    if (!draft || regenName || regenAll || isGenerating) return
+    if (!window.confirm('Generate ulang akan menggantikan draft ini. Lanjutkan?')) return
+    setRegenName(draft.sponsor_name)
+    setRegenError(null)
+    const res = await regenerateDraft(draft.sponsor_name)
+    setRegenName(null)
+    if (!res?.ok) setRegenError(res?.error || 'Generate ulang gagal.')
+  }
+
+  async function handleRegenAll() {
+    if (regenName || regenAll || isGenerating) return
+    if (!window.confirm(`Generate ulang SEMUA ${drafts.length} draft? Draft yang sudah diedit akan ditimpa. Lanjutkan?`)) return
+    setRegenAll(true)
+    setRegenError(null)
+    const res = await regenerateManyDrafts()
+    setRegenAll(false)
+    if (!res?.ok) setRegenError(res?.error || 'Generate ulang semua gagal.')
+  }
+
+  async function handleRetryFailed() {
+    if (regenName || regenAll || isGenerating) return
+    const names = failedNames.length > 0 ? failedNames : undefined
+    setRegenAll(true)
+    setRegenError(null)
+    const res = names
+      ? await regenerateManyDrafts(names)
+      : await runDraft(makeDraftKey(state.campaign, state.selected))
+    setRegenAll(false)
+    if (!res?.ok) setRegenError(res?.error || 'Coba lagi gagal.')
   }
 
   const queuedCount = state.queue.filter(q => q.status === DELIVERY.QUEUED).length
@@ -101,10 +150,12 @@ export default function Draft() {
       )}
 
       {/* Error */}
-      {state.draftPhase === 'error' && (
+      {(state.draftPhase === 'error' || regenError) && (
         <div style={s.errorBanner}>
-          ⚠ {state.draftError}
-          <button style={s.linkBtn} onClick={runDraft}>Coba Lagi</button>
+          ⚠ {regenError || state.draftError}
+          <button style={s.linkBtn} onClick={handleRetryFailed} disabled={regenAll || isGenerating}>
+            {regenAll ? 'Mencoba...' : 'Coba Lagi'}
+          </button>
           <button style={s.linkBtn} onClick={() => setShowDebug(v => !v)}>Debug</button>
         </div>
       )}
@@ -160,19 +211,32 @@ export default function Draft() {
             <button style={s.btnSecondary} onClick={() => setEditMode(e => !e)}>
               {editMode ? '✓ Selesai Edit' : '✏ Edit'}
             </button>
-            <button style={s.btnSecondary} onClick={() => {
-              if (window.confirm('Generate ulang akan menggantikan draft ini. Lanjutkan?')) {
-                regenerateDraft(draft.sponsor_name)
-              }
-            }}>
-              ↺ Generate Ulang
+            <button
+              style={{ ...s.btnSecondary, ...(regenName ? s.btnDisabled : {}) }}
+              onClick={handleRegenActive}
+              disabled={!!regenName || regenAll || isGenerating}
+            >
+              {regenName === draft.sponsor_name ? '...Menggenerate...' : '↺ Generate Ulang'}
             </button>
-            <button style={s.btnSecondary} onClick={() => {
-              if (window.confirm('Merge ulang akan menerapkan ulang data kampanye ke template yang sama. Lanjutkan?')) {
-                remergeDrafts()
-              }
-            }}>
-              ⟳ Merge Ulang
+            <button
+              style={{ ...s.btnSecondary, ...(regenAll ? s.btnDisabled : {}) }}
+              onClick={handleRegenAll}
+              disabled={!!regenName || regenAll || isGenerating}
+              title="Generate ulang semua draft sponsor terpilih"
+            >
+              {regenAll ? '...Menggenerate...' : `↺ Generate Semua (${drafts.length})`}
+            </button>
+            {hasFailed && (
+              <button
+                style={s.btnSecondary}
+                onClick={handleRetryFailed}
+                disabled={!!regenName || regenAll || isGenerating}
+              >
+                ↺ Coba yang Gagal
+              </button>
+            )}
+            <button style={s.btnSecondary} onClick={() => navigate('/app/cari-sponsor')}>
+              ← Kembali
             </button>
           </div>
         </div>
@@ -368,5 +432,6 @@ const s = {
     padding: '7px 16px', background: 'var(--surface-muted)', color: 'var(--text-2)',
     border: '1px solid var(--border-subtle)', borderRadius: 9999, cursor: 'pointer', fontSize: 13,
   },
+  btnDisabled: { opacity: 0.55, cursor: 'not-allowed' },
   linkBtn: { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--state-danger)', textDecoration: 'underline', fontSize: 12, padding: 0 },
 }

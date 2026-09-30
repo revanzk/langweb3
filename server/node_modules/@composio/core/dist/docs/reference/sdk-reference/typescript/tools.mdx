@@ -1,0 +1,463 @@
+---
+title: "Tools"
+description: "This class is used to manage tools in the Composio SDK. It provides methods to list, get, and execute tools."
+---
+
+## Usage
+
+Access this class through the `composio.tools` property:
+
+```typescript
+const composio = new Composio({ apiKey: 'your-api-key' });
+const result = await composio.tools.list();
+```
+
+## Methods
+
+### execute()
+
+Executes a given tool with the provided parameters.
+
+This method calls the Composio API to execute the tool and returns the response.
+
+**Version Control:**
+By default, manual tool execution requires a specific toolkit version. If the version resolves to "latest",
+the execution will throw a `ComposioToolVersionRequiredError` unless `dangerouslySkipVersionCheck` is set to `true`.
+This helps prevent unexpected behavior when new toolkit versions are released.
+
+```typescript
+async execute(slug: string, body: { allowTracing?: boolean; arguments?: Record<string, unknown>; connectedAccountId?: string; customAuthParams?: { baseURL?: string; body?: Record<string, unknown>; parameters: { in: 'query' | 'header'; name: string; value: string | number }[] }; customConnectionData?: { authScheme: 'OAUTH2'; toolkitSlug: string; val: { access_token: string; account_id?: string; account_url?: string; api_key?: string; api_url?: string; authed_user?: { access_token?: ...; scope?: ... }; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; expires_in?: ... | ... | ...; extension?: string; form_api_base_url?: string; generic_api_key?: string; id_token?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; refresh_token?: ... | ...; region?: string; registration_access_token?: string; registration_client_uri?: string; scope?: ... | ... | ...; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; token_type?: string; version?: string; webhook_signature?: string; your_server?: string; your-domain?: string } & object } | { authScheme: 'S2S_OAUTH2'; toolkitSlug: string; val: { access_token?: string; account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; expires_in?: ... | ... | ...; extension?: string; form_api_base_url?: string; generic_api_key?: string; id_token?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; refresh_token?: ... | ...; region?: string; registration_access_token?: string; registration_client_uri?: string; scope?: ... | ... | ...; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; token_type?: string; version?: string; your_server?: string; your-domain?: string } & object } | { authScheme: 'DCR_OAUTH'; toolkitSlug: string; val: { access_token: string; account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; client_id: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; version?: string; your_server?: string; your-domain?: string } & object } | { authScheme: 'API_KEY'; toolkitSlug: string; val: { account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; version?: string; your_server?: string; your-domain?: string } & object } | { authScheme: 'BASIC_WITH_JWT'; toolkitSlug: string; val: { account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; password: string; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; username: string; version?: string; your_server?: string; your-domain?: string } & object } | { authScheme: 'BASIC'; toolkitSlug: string; val: { account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; password: string; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; username: string; version?: string; your_server?: string; your-domain?: string } & object } | { authScheme: 'BEARER_TOKEN'; toolkitSlug: string; val: { account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; token: string; version?: string; your_server?: string; your-domain?: string } & object } | { authScheme: 'OAUTH1'; toolkitSlug: string; val: { account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; callback_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; consumer_key?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; oauth_token: string; oauth_token_secret: string; oauth_verifier?: string; proxy_password?: string; proxy_username?: string; redirectUrl?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; version?: string; your_server?: string; your-domain?: string } & object } | { authScheme: 'NO_AUTH'; toolkitSlug: string; val: { account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; version?: string; your_server?: string; your-domain?: string } & object } | { authScheme: 'SERVICE_ACCOUNT'; toolkitSlug: string; val: { account_id?: string; account_url?: string; api_key?: string; api_url?: string; application_id: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; installation_id: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; private_key: string; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; version?: string; your_server?: string; your-domain?: string } & object }; dangerouslySkipVersionCheck?: boolean; text?: string; userId?: string; version?: string }, options?: { afterExecute?: afterExecuteModifier; beforeExecute?: beforeExecuteModifier } & BeforeFileUploadHook & ComposioRequestOptions): Promise<...>
+```
+
+**Parameters**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `slug` | `string` | The slug/ID of the tool to be executed |
+| `body` | `\{ allowTracing?: boolean; arguments?: Record<string, unknown>; connectedAccountId?: string; customAuthParams?: \{ baseURL?: string; body?: Record<string, unknown>; parameters: \{ in: 'query' \| 'header'; name: string; value: string \| number \}[] \}; customConnectionData?: \{ authScheme: 'OAUTH2'; toolkitSlug: string; val: \{ access_token: string; account_id?: string; account_url?: string; api_key?: string; api_url?: string; authed_user?: \{ access_token?: ...; scope?: ... \}; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; expires_in?: ... \| ... \| ...; extension?: string; form_api_base_url?: string; generic_api_key?: string; id_token?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; refresh_token?: ... \| ...; region?: string; registration_access_token?: string; registration_client_uri?: string; scope?: ... \| ... \| ...; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; token_type?: string; version?: string; webhook_signature?: string; your_server?: string; your-domain?: string \} & object \} \| \{ authScheme: 'S2S_OAUTH2'; toolkitSlug: string; val: \{ access_token?: string; account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; expires_in?: ... \| ... \| ...; extension?: string; form_api_base_url?: string; generic_api_key?: string; id_token?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; refresh_token?: ... \| ...; region?: string; registration_access_token?: string; registration_client_uri?: string; scope?: ... \| ... \| ...; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; token_type?: string; version?: string; your_server?: string; your-domain?: string \} & object \} \| \{ authScheme: 'DCR_OAUTH'; toolkitSlug: string; val: \{ access_token: string; account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; client_id: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; version?: string; your_server?: string; your-domain?: string \} & object \} \| \{ authScheme: 'API_KEY'; toolkitSlug: string; val: \{ account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; version?: string; your_server?: string; your-domain?: string \} & object \} \| \{ authScheme: 'BASIC_WITH_JWT'; toolkitSlug: string; val: \{ account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; password: string; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; username: string; version?: string; your_server?: string; your-domain?: string \} & object \} \| \{ authScheme: 'BASIC'; toolkitSlug: string; val: \{ account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; password: string; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; username: string; version?: string; your_server?: string; your-domain?: string \} & object \} \| \{ authScheme: 'BEARER_TOKEN'; toolkitSlug: string; val: \{ account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; token: string; version?: string; your_server?: string; your-domain?: string \} & object \} \| \{ authScheme: 'OAUTH1'; toolkitSlug: string; val: \{ account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; callback_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; consumer_key?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; oauth_token: string; oauth_token_secret: string; oauth_verifier?: string; proxy_password?: string; proxy_username?: string; redirectUrl?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; version?: string; your_server?: string; your-domain?: string \} & object \} \| \{ authScheme: 'NO_AUTH'; toolkitSlug: string; val: \{ account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; version?: string; your_server?: string; your-domain?: string \} & object \} \| \{ authScheme: 'SERVICE_ACCOUNT'; toolkitSlug: string; val: \{ account_id?: string; account_url?: string; api_key?: string; api_url?: string; application_id: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; installation_id: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; private_key: string; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; version?: string; your_server?: string; your-domain?: string \} & object \}; dangerouslySkipVersionCheck?: boolean; text?: string; userId?: string; version?: string \}` | The parameters to be passed to the tool |
+| `options?` | `\{ afterExecute?: afterExecuteModifier; beforeExecute?: beforeExecuteModifier \} & BeforeFileUploadHook & ComposioRequestOptions` | Optional modifiers and request options |
+
+**Returns**
+
+`Promise<...>` — The response from the tool execution
+
+**Example**
+
+```typescript
+// Look up the tool's current version once, then pin that string in your code or config
+const { version } = await composio.tools.getRawComposioToolBySlug('GITHUB_GET_REPOS');
+console.log(version); // e.g. '20250909_00'
+
+const result = await composio.tools.execute('GITHUB_GET_REPOS', {
+  userId: 'default',
+  version: '20250909_00',
+  arguments: { owner: 'composio' }
+});
+```
+
+```typescript
+const result = await composio.tools.execute('HACKERNEWS_GET_USER', {
+  userId: 'default',
+  arguments: { userId: 'pg' },
+  dangerouslySkipVersionCheck: true // Allows execution with "latest" version
+});
+```
+
+```typescript
+// If toolkitVersions are set during Composio initialization, no need to pass version
+const composio = new Composio({ toolkitVersions: { github: '20250909_00' } });
+const result = await composio.tools.execute('GITHUB_GET_REPOS', {
+  userId: 'default',
+  arguments: { owner: 'composio' }
+});
+```
+
+```typescript
+const result = await composio.tools.execute('GITHUB_GET_ISSUES', {
+  userId: 'default',
+  version: '20250909_00',
+  arguments: { owner: 'composio', repo: 'sdk' }
+}, {
+  beforeExecute: ({ toolSlug, toolkitSlug, params }) => {
+    console.log(`Executing ${toolSlug} from ${toolkitSlug}`);
+    return params;
+  },
+  afterExecute: ({ toolSlug, toolkitSlug, result }) => {
+    console.log(`Completed ${toolSlug}`);
+    return result;
+  }
+});
+```
+
+```typescript
+const result = await composio.tools.execute('HACKERNEWS_GET_FRONTPAGE', {
+  userId: 'default',
+  arguments: {},
+  dangerouslySkipVersionCheck: true,
+}, { signal: AbortSignal.timeout(5_000) });
+```
+
+---
+
+### executeSessionTool()
+
+Executes a tool based on a tool router session.
+
+```typescript
+async executeSessionTool(toolSlug: string, body: { arguments?: Record<string, unknown>; sessionId: string }, modifiers?: SessionExecuteMetaModifiers, tool?: { availableVersions?: string[]; description?: string; inputParameters?: { $defs?: Record<string, JSONSchemaProperty>; additionalProperties?: boolean | JSONSchemaProperty; allOf?: JSONSchemaProperty[]; anyOf?: JSONSchemaProperty[]; default?: unknown; definitions?: Record<string, JSONSchemaProperty>; description?: string; not?: JSONSchemaProperty; nullable?: boolean; oneOf?: JSONSchemaProperty[]; patternProperties?: Record<string, JSONSchemaProperty>; properties?: Record<string, JSONSchemaProperty>; required?: string[]; title?: string; type: 'object' }; isDeprecated?: boolean; isNoAuth?: boolean; name: string; outputParameters?: { $defs?: Record<string, JSONSchemaProperty>; additionalProperties?: boolean | JSONSchemaProperty; allOf?: JSONSchemaProperty[]; anyOf?: JSONSchemaProperty[]; default?: unknown; definitions?: Record<string, JSONSchemaProperty>; description?: string; not?: JSONSchemaProperty; nullable?: boolean; oneOf?: JSONSchemaProperty[]; patternProperties?: Record<string, JSONSchemaProperty>; properties?: Record<string, JSONSchemaProperty>; required?: string[]; title?: string; type: 'object' }; scopes?: string[]; slug: string; tags?: string[]; toolkit?: { logo?: string; name: string; slug: string }; version?: string }, options?: ToolRouterSessionExecuteOptions, requestOptions?: ComposioRequestOptions): Promise<...>
+```
+
+**Parameters**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `toolSlug` | `string` | The slug of the tool to execute |
+| `body` | `\{ arguments?: Record<string, unknown>; sessionId: string \}` | The execution parameters |
+| `modifiers?` | `SessionExecuteMetaModifiers` | The modifiers to apply to the tool |
+| `tool?` | `\{ availableVersions?: string[]; description?: string; inputParameters?: \{ $defs?: Record<string, JSONSchemaProperty>; additionalProperties?: boolean \| JSONSchemaProperty; allOf?: JSONSchemaProperty[]; anyOf?: JSONSchemaProperty[]; default?: unknown; definitions?: Record<string, JSONSchemaProperty>; description?: string; not?: JSONSchemaProperty; nullable?: boolean; oneOf?: JSONSchemaProperty[]; patternProperties?: Record<string, JSONSchemaProperty>; properties?: Record<string, JSONSchemaProperty>; required?: string[]; title?: string; type: 'object' \}; isDeprecated?: boolean; isNoAuth?: boolean; name: string; outputParameters?: \{ $defs?: Record<string, JSONSchemaProperty>; additionalProperties?: boolean \| JSONSchemaProperty; allOf?: JSONSchemaProperty[]; anyOf?: JSONSchemaProperty[]; default?: unknown; definitions?: Record<string, JSONSchemaProperty>; description?: string; not?: JSONSchemaProperty; nullable?: boolean; oneOf?: JSONSchemaProperty[]; patternProperties?: Record<string, JSONSchemaProperty>; properties?: Record<string, JSONSchemaProperty>; required?: string[]; title?: string; type: 'object' \}; scopes?: string[]; slug: string; tags?: string[]; toolkit?: \{ logo?: string; name: string; slug: string \}; version?: string \}` | Optional tool schema used to resolve toolkit metadata for modifiers |
+| `options?` | `ToolRouterSessionExecuteOptions` |  |
+| `requestOptions?` | `ComposioRequestOptions` |  |
+
+**Returns**
+
+`Promise<...>` — The response from the tool execution
+
+---
+
+### get()
+
+Get a list of tools from Composio based on filters.
+This method fetches the tools from the Composio API and wraps them using the provider.
+
+**Overload 1**
+
+```typescript
+async get(userId: string, filters: ToolListParams, options?: ProviderOptions & ComposioRequestOptions): Promise<ReturnType>
+```
+
+**Parameters**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `userId` | `string` | The user id to get the tools for |
+| `filters` | `ToolListParams` | The filters to apply when fetching tools |
+| `options?` | `ProviderOptions & ComposioRequestOptions` | Provider options, modifiers, and/or AbortSignal |
+
+**Returns**
+
+`Promise<ReturnType>` — The wrapped tools collection
+
+**Overload 2**
+
+```typescript
+async get(userId: string, slug: string, options?: ProviderOptions & ComposioRequestOptions): Promise<ReturnType>
+```
+
+**Parameters**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `userId` | `string` | The user id to get the tool for |
+| `slug` | `string` | The slug of the tool to fetch |
+| `options?` | `ProviderOptions & ComposioRequestOptions` | Optional provider options including modifiers and signal |
+
+**Returns**
+
+`Promise<ReturnType>` — The wrapped tool
+
+**Example**
+
+```typescript
+// Get tools from the GitHub toolkit
+const tools = await composio.tools.get('default', {
+  toolkits: ['github'],
+  limit: 10
+});
+
+// Timeout a slow search after 5s
+const emailTools = await composio.tools.get('default', {
+  search: 'send email',
+}, { signal: AbortSignal.timeout(5_000) });
+```
+
+---
+
+### getInput()
+
+Generates arguments for a tool from a natural-language description of the task.
+
+Composio uses an LLM to fill the tool's input parameters from `text`. Review the
+generated arguments before passing them to `tools.execute()`.
+
+```typescript
+async getInput(slug: string, body: ToolGetInputParams, requestOptions?: ComposioRequestOptions): Promise<ToolGetInputResponse>
+```
+
+**Parameters**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `slug` | `string` | The slug of the tool to generate arguments for |
+| `body` | `ToolGetInputParams` | The generation request |
+| `requestOptions?` | `ComposioRequestOptions` |  |
+
+**Returns**
+
+`Promise<ToolGetInputResponse>` — The generated `arguments`, or an `error` when generation fails
+
+**Example**
+
+```typescript
+const { arguments: args, error } = await composio.tools.getInput('GITHUB_CREATE_ISSUE', {
+  text: 'Open an issue in composiohq/composio titled "Docs typo" describing the broken link',
+  version: '20250909_00',
+});
+if (error) throw new Error(error);
+console.log(args); // { owner: 'composiohq', repo: 'composio', title: 'Docs typo', ... }
+```
+
+---
+
+### getRawComposioToolBySlug()
+
+Retrieves a specific tool by its slug from the Composio API.
+
+This method fetches a single tool in raw format without provider-specific wrapping,
+providing direct access to the tool's schema and metadata. Tool versions are controlled
+at the Composio SDK initialization level through the `toolkitVersions` configuration.
+Local experimental custom tools are session-scoped; attach them when creating or reusing a
+Tool Router session, then use `session.tools()`, `session.customTools()`, or
+`session.execute()`.
+
+```typescript
+async getRawComposioToolBySlug(slug: string, options?: ToolRetrievalOptions, requestOptions?: ComposioRequestOptions): Promise<{ availableVersions?: string[]; description?: string; inputParameters?: { $defs?: Record<string, JSONSchemaProperty>; additionalProperties?: boolean | JSONSchemaProperty; allOf?: JSONSchemaProperty[]; anyOf?: JSONSchemaProperty[]; default?: unknown; definitions?: Record<string, JSONSchemaProperty>; description?: string; not?: JSONSchemaProperty; nullable?: boolean; oneOf?: JSONSchemaProperty[]; patternProperties?: Record<string, JSONSchemaProperty>; properties?: Record<string, JSONSchemaProperty>; required?: string[]; title?: string; type: 'object' }; isDeprecated?: boolean; isNoAuth?: boolean; name: string; outputParameters?: { $defs?: Record<string, JSONSchemaProperty>; additionalProperties?: boolean | JSONSchemaProperty; allOf?: JSONSchemaProperty[]; anyOf?: JSONSchemaProperty[]; default?: unknown; definitions?: Record<string, JSONSchemaProperty>; description?: string; not?: JSONSchemaProperty; nullable?: boolean; oneOf?: JSONSchemaProperty[]; patternProperties?: Record<string, JSONSchemaProperty>; properties?: Record<string, JSONSchemaProperty>; required?: string[]; title?: string; type: 'object' }; scopes?: string[]; slug: string; tags?: string[]; toolkit?: { logo?: string; name: string; slug: string }; version?: string }>
+```
+
+**Parameters**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `slug` | `string` | The unique identifier of the tool (e.g., 'GITHUB_GET_REPOS') |
+| `options?` | `ToolRetrievalOptions` | Optional configuration for tool retrieval |
+| `requestOptions?` | `ComposioRequestOptions` |  |
+
+**Returns**
+
+`Promise<\{ availableVersions?: string[]; description?: string; inputParameters?: \{ $defs?: Record<string, JSONSchemaProperty>; additionalProperties?: boolean \| JSONSchemaProperty; allOf?: JSONSchemaProperty[]; anyOf?: JSONSchemaProperty[]; default?: unknown; definitions?: Record<string, JSONSchemaProperty>; description?: string; not?: JSONSchemaProperty; nullable?: boolean; oneOf?: JSONSchemaProperty[]; patternProperties?: Record<string, JSONSchemaProperty>; properties?: Record<string, JSONSchemaProperty>; required?: string[]; title?: string; type: 'object' \}; isDeprecated?: boolean; isNoAuth?: boolean; name: string; outputParameters?: \{ $defs?: Record<string, JSONSchemaProperty>; additionalProperties?: boolean \| JSONSchemaProperty; allOf?: JSONSchemaProperty[]; anyOf?: JSONSchemaProperty[]; default?: unknown; definitions?: Record<string, JSONSchemaProperty>; description?: string; not?: JSONSchemaProperty; nullable?: boolean; oneOf?: JSONSchemaProperty[]; patternProperties?: Record<string, JSONSchemaProperty>; properties?: Record<string, JSONSchemaProperty>; required?: string[]; title?: string; type: 'object' \}; scopes?: string[]; slug: string; tags?: string[]; toolkit?: \{ logo?: string; name: string; slug: string \}; version?: string \}>` — The requested tool with its complete schema and metadata
+
+**Example**
+
+```typescript
+// Get a tool by slug
+const tool = await composio.tools.getRawComposioToolBySlug('GITHUB_GET_REPOS');
+console.log(tool.name, tool.description);
+
+// Get a tool with schema transformation
+const customizedTool = await composio.tools.getRawComposioToolBySlug(
+  'SLACK_SEND_MESSAGE',
+  {
+    modifySchema: ({ toolSlug, toolkitSlug, schema }) => {
+      return {
+        ...schema,
+        description: `Enhanced ${schema.description} with custom modifications`,
+        customMetadata: {
+          lastModified: new Date().toISOString(),
+          toolkit: toolkitSlug
+        }
+      };
+    }
+  }
+);
+
+// Access tool properties
+const githubTool = await composio.tools.getRawComposioToolBySlug('GITHUB_CREATE_ISSUE');
+console.log({
+  slug: githubTool.slug,
+  name: githubTool.name,
+  toolkit: githubTool.toolkit?.name,
+  version: githubTool.version,
+  availableVersions: githubTool.availableVersions,
+  inputParameters: githubTool.inputParameters
+});
+```
+
+---
+
+### getRawComposioTools()
+
+Lists Composio API tools available to the SDK.
+
+This method fetches remote Composio tools from the API in raw format. The response can be
+filtered and modified as needed. Local experimental custom tools are session-scoped; attach
+them when creating or reusing a Tool Router session, then use `session.tools()`,
+`session.customTools()`, or `session.execute()`.
+It provides access to the underlying tool data without provider-specific wrapping.
+
+```typescript
+async getRawComposioTools(query: ToolListParams, options?: SchemaModifierOptions, requestOptions?: ComposioRequestOptions): Promise<ToolList>
+```
+
+**Parameters**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `query` | `ToolListParams` | Query parameters to filter the tools (required) |
+| `options?` | `SchemaModifierOptions` | Optional configuration for tool retrieval |
+| `requestOptions?` | `ComposioRequestOptions` |  |
+
+**Returns**
+
+`Promise<ToolList>` — List of tools matching the query criteria
+
+**Example**
+
+```typescript
+// Get tools from specific toolkits
+const githubTools = await composio.tools.getRawComposioTools({
+  toolkits: ['github'],
+  limit: 10
+});
+
+// Get specific tools by slug
+const specificTools = await composio.tools.getRawComposioTools({
+  tools: ['GITHUB_GET_REPOS', 'HACKERNEWS_GET_USER']
+});
+
+// Get tools from specific toolkits
+const githubTools = await composio.tools.getRawComposioTools({
+  toolkits: ['github'],
+  limit: 10
+});
+
+// Get tools with schema transformation
+const customizedTools = await composio.tools.getRawComposioTools({
+  toolkits: ['github'],
+  limit: 5
+}, {
+  modifySchema: ({ toolSlug, toolkitSlug, schema }) => {
+    // Add custom properties to tool schema
+    return {
+      ...schema,
+      customProperty: `Modified ${toolSlug} from ${toolkitSlug}`,
+      tags: [...(schema.tags || []), 'customized']
+    };
+  }
+});
+
+// Search for tools
+const searchResults = await composio.tools.getRawComposioTools({
+  search: 'user management'
+});
+
+// Get tools by authentication config
+const authSpecificTools = await composio.tools.getRawComposioTools({
+  authConfigIds: ['auth_config_123']
+});
+```
+
+---
+
+### getRawToolRouterSessionTools()
+
+Fetches tools exposed by a tool router session.
+This includes helper/meta tools plus any tools preloaded into the session.
+It provides access to the underlying tool data without provider-specific wrapping.
+
+```typescript
+async getRawToolRouterSessionTools(sessionId: string, options?: SchemaModifierOptions, requestOptions?: ComposioRequestOptions): Promise<ToolList>
+```
+
+**Parameters**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `sessionId` | `string` | \{string\} The session id to get tools for |
+| `options?` | `SchemaModifierOptions` | \{SchemaModifierOptions\} Optional configuration for tool retrieval |
+| `requestOptions?` | `ComposioRequestOptions` |  |
+
+**Returns**
+
+`Promise<ToolList>` — The list of session tools
+
+**Example**
+
+```typescript
+const sessionTools = await composio.tools.getRawToolRouterSessionTools('session_123');
+console.log(sessionTools);
+```
+
+---
+
+### getToolsEnum()
+
+Fetches the list of all available tools in the Composio SDK.
+
+This method is mostly used by the CLI to get the list of tools.
+No filtering is done on the tools, the list is cached in the backend, no further optimization is required.
+
+```typescript
+async getToolsEnum(requestOptions?: ComposioRequestOptions): Promise<string[]>
+```
+
+**Parameters**
+
+| Name | Type |
+|------|------|
+| `requestOptions?` | `ComposioRequestOptions` |
+
+**Returns**
+
+`Promise<string[]>` — The complete list of all available tools with their metadata
+
+**Example**
+
+```typescript
+// Get all available tools as an enum
+const toolsEnum = await composio.tools.getToolsEnum();
+console.log(toolsEnum.items);
+```
+
+---
+
+### proxyExecute()
+
+Sends an HTTP request to a toolkit's API, authenticated as a connected account.
+
+Use it to call an endpoint that no predefined tool covers. Composio injects the
+connected account's credentials on the server side.
+
+A relative `endpoint` is appended to the toolkit's base URL, and that base URL can
+already include a path. Google Calendar's base URL is
+`https://www.googleapis.com/calendar/v3`, so pass `/users/me/calendarList`, not
+`/calendar/v3/users/me/calendarList` (which resolves to `/calendar/v3/calendar/v3/...`
+and returns a 404 from Google). An absolute URL on the same domain is sent as-is.
+
+```typescript
+async proxyExecute(body: { body?: unknown; connectedAccountId?: string; customConnectionData?: { authScheme: 'OAUTH2'; toolkitSlug: string; val: { access_token: string; account_id?: string; account_url?: string; api_key?: string; api_url?: string; authed_user?: { access_token?: ...; scope?: ... }; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; expires_in?: ... | ... | ...; extension?: string; form_api_base_url?: string; generic_api_key?: string; id_token?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; refresh_token?: ... | ...; region?: string; registration_access_token?: string; registration_client_uri?: string; scope?: ... | ... | ...; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; token_type?: string; version?: string; webhook_signature?: string; your_server?: string; your-domain?: string } & object } | { authScheme: 'S2S_OAUTH2'; toolkitSlug: string; val: { access_token?: string; account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; expires_in?: ... | ... | ...; extension?: string; form_api_base_url?: string; generic_api_key?: string; id_token?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; refresh_token?: ... | ...; region?: string; registration_access_token?: string; registration_client_uri?: string; scope?: ... | ... | ...; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; token_type?: string; version?: string; your_server?: string; your-domain?: string } & object } | { authScheme: 'DCR_OAUTH'; toolkitSlug: string; val: { access_token: string; account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; client_id: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; version?: string; your_server?: string; your-domain?: string } & object } | { authScheme: 'API_KEY'; toolkitSlug: string; val: { account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; version?: string; your_server?: string; your-domain?: string } & object } | { authScheme: 'BASIC_WITH_JWT'; toolkitSlug: string; val: { account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; password: string; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; username: string; version?: string; your_server?: string; your-domain?: string } & object } | { authScheme: 'BASIC'; toolkitSlug: string; val: { account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; password: string; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; username: string; version?: string; your_server?: string; your-domain?: string } & object } | { authScheme: 'BEARER_TOKEN'; toolkitSlug: string; val: { account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; token: string; version?: string; your_server?: string; your-domain?: string } & object } | { authScheme: 'OAUTH1'; toolkitSlug: string; val: { account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; callback_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; consumer_key?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; oauth_token: string; oauth_token_secret: string; oauth_verifier?: string; proxy_password?: string; proxy_username?: string; redirectUrl?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; version?: string; your_server?: string; your-domain?: string } & object } | { authScheme: 'NO_AUTH'; toolkitSlug: string; val: { account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; version?: string; your_server?: string; your-domain?: string } & object } | { authScheme: 'SERVICE_ACCOUNT'; toolkitSlug: string; val: { account_id?: string; account_url?: string; api_key?: string; api_url?: string; application_id: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; installation_id: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; private_key: string; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; version?: string; your_server?: string; your-domain?: string } & object }; endpoint: string; method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'; parameters?: { in: 'query' | 'header'; name: string; value: string | number }[] }, requestOptions?: ComposioRequestOptions): Promise<ToolProxyResponse>
+```
+
+**Parameters**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `body` | `\{ body?: unknown; connectedAccountId?: string; customConnectionData?: \{ authScheme: 'OAUTH2'; toolkitSlug: string; val: \{ access_token: string; account_id?: string; account_url?: string; api_key?: string; api_url?: string; authed_user?: \{ access_token?: ...; scope?: ... \}; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; expires_in?: ... \| ... \| ...; extension?: string; form_api_base_url?: string; generic_api_key?: string; id_token?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; refresh_token?: ... \| ...; region?: string; registration_access_token?: string; registration_client_uri?: string; scope?: ... \| ... \| ...; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; token_type?: string; version?: string; webhook_signature?: string; your_server?: string; your-domain?: string \} & object \} \| \{ authScheme: 'S2S_OAUTH2'; toolkitSlug: string; val: \{ access_token?: string; account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; expires_in?: ... \| ... \| ...; extension?: string; form_api_base_url?: string; generic_api_key?: string; id_token?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; refresh_token?: ... \| ...; region?: string; registration_access_token?: string; registration_client_uri?: string; scope?: ... \| ... \| ...; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; token_type?: string; version?: string; your_server?: string; your-domain?: string \} & object \} \| \{ authScheme: 'DCR_OAUTH'; toolkitSlug: string; val: \{ access_token: string; account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; client_id: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; version?: string; your_server?: string; your-domain?: string \} & object \} \| \{ authScheme: 'API_KEY'; toolkitSlug: string; val: \{ account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; version?: string; your_server?: string; your-domain?: string \} & object \} \| \{ authScheme: 'BASIC_WITH_JWT'; toolkitSlug: string; val: \{ account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; password: string; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; username: string; version?: string; your_server?: string; your-domain?: string \} & object \} \| \{ authScheme: 'BASIC'; toolkitSlug: string; val: \{ account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; password: string; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; username: string; version?: string; your_server?: string; your-domain?: string \} & object \} \| \{ authScheme: 'BEARER_TOKEN'; toolkitSlug: string; val: \{ account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; token: string; version?: string; your_server?: string; your-domain?: string \} & object \} \| \{ authScheme: 'OAUTH1'; toolkitSlug: string; val: \{ account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; callback_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; consumer_key?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; oauth_token: string; oauth_token_secret: string; oauth_verifier?: string; proxy_password?: string; proxy_username?: string; redirectUrl?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; version?: string; your_server?: string; your-domain?: string \} & object \} \| \{ authScheme: 'NO_AUTH'; toolkitSlug: string; val: \{ account_id?: string; account_url?: string; api_key?: string; api_url?: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; version?: string; your_server?: string; your-domain?: string \} & object \} \| \{ authScheme: 'SERVICE_ACCOUNT'; toolkitSlug: string; val: \{ account_id?: string; account_url?: string; api_key?: string; api_url?: string; application_id: string; base_url?: string; basic_encoded?: string; bearer_token?: string; borneo_dashboard_url?: string; COMPANYDOMAIN?: string; composio_link_redirect_url?: string; dc?: string; domain?: string; extension?: string; form_api_base_url?: string; generic_api_key?: string; installation_id: string; instanceEndpoint?: string; instanceName?: string; long_redirect_url?: boolean; private_key: string; proxy_password?: string; proxy_username?: string; region?: string; registration_access_token?: string; registration_client_uri?: string; server_location?: string; shop?: string; site_name?: string; state_prefix?: string; subdomain?: string; version?: string; your_server?: string; your-domain?: string \} & object \}; endpoint: string; method: 'GET' \| 'POST' \| 'PUT' \| 'DELETE' \| 'PATCH'; parameters?: \{ in: 'query' \| 'header'; name: string; value: string \| number \}[] \}` | The proxy request |
+| `requestOptions?` | `ComposioRequestOptions` |  |
+
+**Returns**
+
+`Promise<ToolProxyResponse>` — The upstream status, headers, and parsed body
+
+**Example**
+
+```typescript
+// Google Calendar's base URL is https://www.googleapis.com/calendar/v3
+const { status, data } = await composio.tools.proxyExecute({
+  endpoint: '/users/me/calendarList',
+  method: 'GET',
+  connectedAccountId: 'ca_...',
+  parameters: [{ in: 'query', name: 'maxResults', value: 10 }],
+});
+console.log(status, data);
+```
+
+---

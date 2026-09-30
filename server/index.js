@@ -11,46 +11,85 @@ app.use(cors({
 }))
 app.use(express.json())
 
+function formatComposioError(err) {
+  return err?.message || String(err)
+}
+
+function accountEmailOf(acc) {
+  return acc?.meta?.email || acc?.email || acc?.data?.displayName || null
+}
+
+// Bentuk yang dipakai frontend (store.jsx):
+// refreshComposio baca accounts[0].id||connectedAccountId + meta.email||email,
+// poll baca account.status==='ACTIVE' + meta.email.
+function toFrontendAccount(raw) {
+  if (!raw) return raw
+  const email = raw?.data?.displayName || raw?.email || raw?.meta?.email || null
+  return {
+    ...raw,
+    id: raw.id || raw.connectedAccountId,
+    connectedAccountId: raw.connectedAccountId || raw.id,
+    appName: raw.appName || raw?.toolkit?.slug || 'gmail',
+    appUniqueId: raw.appUniqueId || raw?.toolkit?.slug || 'gmail',
+    email,
+    meta: { ...(raw.meta || {}), email },
+  }
+}
+
 // ── Health ────────────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, composioKey: !!process.env.COMPOSIO_API_KEY })
+  res.json({
+    ok: true,
+    composioKey: !!process.env.COMPOSIO_API_KEY,
+    gmailAuthConfig: !!(process.env.COMPOSIO_GMAIL_AUTH_CONFIG_ID || 'ac_Im0mILtarfgb'),
+  })
 })
 
-// ── Composio: list Gmail accounts ─────────────────────────────────────────────
+// ── Composio: list Gmail accounts (per-user) ──────────────────────────────────
 app.get('/api/composio/accounts', async (req, res) => {
-  const { userId = 'default' } = req.query
+  const { getComposioClient, normalizeUserId } = require('./composio')
+  const userId = normalizeUserId(req.query.userId)
   try {
-    const { getComposioClient } = require('./composio')
-    const client = getComposioClient()
-    const result = await client.connectedAccounts.list({ entityId: userId })
+    const client = await getComposioClient()
+    const result = await client.connectedAccounts.list({
+      userIds: [userId],
+      toolkitSlugs: ['gmail'],
+    })
     const items = result?.items || result?.data || []
-    const gmail = items.filter(a =>
-      (a.appName || a.appUniqueId || '').toLowerCase().includes('gmail')
-    )
+    const gmail = items
+      .filter(a => ((a?.toolkit?.slug || a.appName || a.appUniqueId || '').toLowerCase().includes('gmail')))
+      .map(toFrontendAccount)
+      .sort((a, b) => (b.status === 'ACTIVE') - (a.status === 'ACTIVE'))
     res.json({ ok: true, accounts: gmail })
   } catch (err) {
-    res.json({ ok: false, error: err.message })
+    res.json({ ok: false, error: formatComposioError(err) })
   }
 })
 
-// ── Composio: initiate OAuth link ─────────────────────────────────────────────
+// ── Composio: initiate OAuth link (per-user, hosted Connect Link) ─────────────
+// Wajib authConfigId (managed Gmail). Tanpa callbackUrl dulu — frontend polling.
 app.post('/api/composio/link', async (req, res) => {
-  const { userId = 'default' } = req.body
+  const { getComposioClient, getGmailAuthConfigId, normalizeUserId } = require('./composio')
+  const userId = normalizeUserId(req.body.userId)
+  const { callbackUrl } = req.body || {}
   try {
-    const { getComposioClient } = require('./composio')
-    const client = getComposioClient()
-    const result = await client.connectedAccounts.initiate({
-      entityId: userId,
-      appName: 'gmail',
-      authMode: 'OAUTH2',
-    })
+    const authConfigId = getGmailAuthConfigId()
+    if (!authConfigId) {
+      return res.json({ ok: false, error: 'COMPOSIO_GMAIL_AUTH_CONFIG_ID belum diisi di .env (Dashboard → Auth Configs → Gmail).' })
+    }
+    const client = await getComposioClient()
+    const result = await client.connectedAccounts.link(
+      userId,
+      authConfigId,
+      callbackUrl ? { callbackUrl } : undefined,
+    )
     res.json({
       ok: true,
       redirect_url: result.redirectUrl,
-      connected_account_id: result.connectedAccountId,
+      connected_account_id: result.id || result.connectedAccountId,
     })
   } catch (err) {
-    res.json({ ok: false, error: err.message })
+    res.json({ ok: false, error: formatComposioError(err) })
   }
 })
 
@@ -58,71 +97,76 @@ app.post('/api/composio/link', async (req, res) => {
 app.get('/api/composio/accounts/:id', async (req, res) => {
   try {
     const { getComposioClient } = require('./composio')
-    const client = getComposioClient()
-    const account = await client.connectedAccounts.get({ connectedAccountId: req.params.id })
-    res.json({ ok: true, account })
+    const client = await getComposioClient()
+    const raw = await client.connectedAccounts.get(req.params.id)
+    res.json({ ok: true, account: toFrontendAccount(raw) })
   } catch (err) {
-    res.json({ ok: false, error: err.message })
+    res.json({ ok: false, error: formatComposioError(err) })
   }
 })
 
-// ── Send email via Gmail ──────────────────────────────────────────────────────
+// ── Send email via Gmail (per-user) ───────────────────────────────────────────
 app.post('/api/send-email', async (req, res) => {
+  const { getComposioClient, getGmailVersion, normalizeUserId } = require('./composio')
+  const userId = normalizeUserId(req.body.userId)
   const { connectedAccountId, to, subject, body } = req.body
   if (!connectedAccountId || !to || !subject || !body) {
     return res.json({ ok: false, error: 'Missing required fields: connectedAccountId, to, subject, body' })
   }
   try {
     await new Promise(r => setTimeout(r, 1200))
-    const { getComposioClient } = require('./composio')
-    const client = getComposioClient()
-    const result = await client.actions.execute({
-      actionName: 'GMAIL_SEND_EMAIL',
-      requestBody: {
-        connectedAccountId,
-        input: { to, subject, messageBody: body },
-      },
+    const client = await getComposioClient()
+    const result = await client.tools.execute('GMAIL_SEND_EMAIL', {
+      userId,
+      connectedAccountId,
+      version: getGmailVersion(),
+      arguments: { recipient_email: to, subject, body },
     })
-    const data = result?.data || result || {}
-    const messageId = data.messageId || data.id || null
-    const threadId = data.threadId || null
-    res.json({ ok: true, messageId, threadId })
+    if (result && result.successful === false) {
+      return res.json({ ok: false, error: result.error || 'GMAIL_SEND_EMAIL gagal' })
+    }
+    const data = result?.data || {}
+    res.json({ ok: true, messageId: data.id || data.messageId || null, threadId: data.threadId || null })
   } catch (err) {
-    res.json({ ok: false, error: err.message })
+    res.json({ ok: false, error: formatComposioError(err) })
   }
 })
 
-// ── Check replies ─────────────────────────────────────────────────────────────
+// ── Check replies (per-user) ──────────────────────────────────────────────────
 app.post('/api/check-replies', async (req, res) => {
+  const { getComposioClient, getGmailVersion, normalizeUserId } = require('./composio')
+  const userId = normalizeUserId(req.body.userId)
   const { connectedAccountId, selfEmail, threads = [] } = req.body
   const batch = threads.slice(0, 10)
   const results = []
   try {
-    const { getComposioClient } = require('./composio')
-    const client = getComposioClient()
+    const client = await getComposioClient()
     for (const t of batch) {
       await new Promise(r => setTimeout(r, 800))
       try {
-        const thread = await client.actions.execute({
-          actionName: 'GMAIL_GET_THREAD',
-          requestBody: {
-            connectedAccountId,
-            input: { threadId: t.threadId },
-          },
+        const fetched = await client.tools.execute('GMAIL_FETCH_MESSAGE_BY_THREAD_ID', {
+          userId,
+          connectedAccountId,
+          version: getGmailVersion(),
+          arguments: { thread_id: t.threadId },
         })
-        const messages = thread?.data?.messages || thread?.messages || []
+        const messages = fetched?.data?.messages || []
         const sentAt = t.sentAt ? new Date(t.sentAt).getTime() : 0
         const reply = messages.find(m => {
-          const headers = m.payload?.headers || []
-          const from = headers.find(h => h.name === 'From')?.value || m.from || ''
-          const date = m.internalDate ? parseInt(m.internalDate) : 0
+          const from = m.sender || m.from || ''
+          const date = m.messageTimestamp ? new Date(m.messageTimestamp).getTime()
+            : (m.internalDate ? parseInt(m.internalDate) : 0)
           return selfEmail ? !from.includes(selfEmail) && date > sentAt : date > sentAt
         })
         if (reply) {
-          const headers = reply.payload?.headers || []
-          const from = headers.find(h => h.name === 'From')?.value || reply.from || ''
-          const date = headers.find(h => h.name === 'Date')?.value || ''
-          results.push({ key: t.key, hasReply: true, from, date, snippet: reply.snippet || '' })
+          const text = reply.messageText || reply.snippet || ''
+          results.push({
+            key: t.key,
+            hasReply: true,
+            from: reply.sender || reply.from || '',
+            date: reply.messageTimestamp || '',
+            snippet: String(text).slice(0, 200),
+          })
         } else {
           results.push({ key: t.key, hasReply: false })
         }
@@ -132,7 +176,7 @@ app.post('/api/check-replies', async (req, res) => {
     }
     res.json({ ok: true, results })
   } catch (err) {
-    res.json({ ok: false, error: err.message })
+    res.json({ ok: false, error: formatComposioError(err) })
   }
 })
 

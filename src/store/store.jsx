@@ -2,7 +2,7 @@ import { createContext, useContext, useReducer, useEffect, useRef } from 'react'
 import { validateSearch } from '../lib/validators.js'
 import { runFlow, extractCandidates } from '../lib/langflow.js'
 import {
-  parseSearchOutput, parseDraftOutput, mergeDraft,
+  parseSearchOutput, parseDraftOutput, mergeSubjectAndBody,
   buildSearchInput, buildDraftInput,
 } from '../lib/merge.js'
 import { FLOW_SEARCH, FLOW_DRAFT, DELIVERY, RELATIONSHIP, MAX_EMAILS } from '../lib/constants.js'
@@ -50,6 +50,23 @@ function newId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
 }
 
+// Per-user Composio userId: UUID stabil per-browser (localStorage `sf_user_id`).
+// Tiap pemakai login Gmail masing-masing; jangan pakai email (bisa berubah)
+// dan jangan hardcode 'default' (berbagi akun antar user).
+function getComposioUserId() {
+  try {
+    const KEY = 'sf_user_id'
+    let id = localStorage.getItem(KEY)
+    if (!id) {
+      id = `u_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`
+      localStorage.setItem(KEY, id)
+    }
+    return id
+  } catch {
+    return 'default'
+  }
+}
+
 // ── Reducer ───────────────────────────────────────────────────────────────────
 function reducer(state, action) {
   switch (action.type) {
@@ -92,7 +109,7 @@ function reducer(state, action) {
     case 'UPDATE_DRAFT': {
       const drafts = state.drafts.map(d =>
         d.sponsor_name === action.sponsor_name
-          ? { ...d, ...action.payload, edited: true }
+          ? { ...d, ...action.payload, edited: action.payload.edited ?? true }
           : d
       )
       return { ...state, drafts }
@@ -298,7 +315,7 @@ export function StoreProvider({ children }) {
   }
 
   async function runDraft(draftKey) {
-    if (selectedSponsors.length === 0) return
+    if (selectedSponsors.length === 0) return { ok: false, error: 'Tidak ada sponsor terpilih.' }
 
     dispatch({ type: 'SET_DRAFT_PHASE', payload: 'generating' })
 
@@ -309,56 +326,106 @@ export function StoreProvider({ children }) {
 
       if (!result.ok) {
         dispatch({ type: 'SET_DRAFT_PHASE', payload: 'error', error: result.error })
-        return
+        return { ok: false, error: result.error }
       }
 
       const candidates = extractCandidates(result.data)
       const rawText = candidates[0] || ''
-      const { subject, body } = parseDraftOutput(rawText)
-      const { merged, leftovers } = mergeDraft(body, state.campaign, sponsor)
+      const { subject: rawSubject, body: rawBody } = parseDraftOutput(rawText)
+      const { subject, body, leftovers } = mergeSubjectAndBody(rawSubject, rawBody, state.campaign, sponsor)
 
       drafts.push({
         sponsor_name: sponsor.sponsor_name,
         to: sponsor.contact_email || '',
         subject,
-        body: merged,
+        body,
         edited: false,
         leftovers,
       })
     }
 
     dispatch({ type: 'SET_DRAFTS', drafts, key: draftKey || '' })
+    return { ok: true, count: drafts.length }
   }
 
   async function regenerateDraft(sponsorName) {
     const sponsor = selectedSponsors.find(s => s.sponsor_name === sponsorName)
-    if (!sponsor) return
+    if (!sponsor) return { ok: false, error: 'Sponsor tidak ditemukan.' }
 
     const inputValue = buildDraftInput(state.campaign, sponsor)
     const result = await runFlow(FLOW_DRAFT, inputValue)
-    if (!result.ok) return
+    if (!result.ok) {
+      dispatch({ type: 'SET_DRAFT_PHASE', payload: 'error', error: result.error })
+      return { ok: false, error: result.error }
+    }
 
     const candidates = extractCandidates(result.data)
     const rawText = candidates[0] || ''
-    const { subject, body } = parseDraftOutput(rawText)
-    const { merged, leftovers } = mergeDraft(body, state.campaign, sponsor)
+    const { subject: rawSubject, body: rawBody } = parseDraftOutput(rawText)
+    const { subject, body, leftovers } = mergeSubjectAndBody(rawSubject, rawBody, state.campaign, sponsor)
 
     dispatch({
       type: 'UPDATE_DRAFT',
       sponsor_name: sponsorName,
-      payload: { subject, body: merged, leftovers, edited: false },
+      payload: { subject, body, leftovers, edited: false },
     })
+    // Pastikan phase kembali done bila sebelumnya error dan draft sudah ada
+    dispatch({ type: 'SET_DRAFT_PHASE', payload: 'done' })
+    return { ok: true }
   }
 
-  function remergeDrafts() {
-    const drafts = state.drafts.map(d => {
-      if (d.edited) return d
-      const sponsor = selectedSponsors.find(s => s.sponsor_name === d.sponsor_name)
-      if (!sponsor) return d
-      const { merged, leftovers } = mergeDraft(d.body, state.campaign, sponsor)
-      return { ...d, body: merged, leftovers }
-    })
-    dispatch({ type: 'SET_DRAFTS', drafts })
+  // Generate ulang banyak draft sekaligus (semua atau daftar nama tertentu).
+  // Dipakai tombol "Generate Semua" dan "Coba yang Gagal".
+  async function regenerateManyDrafts(sponsorNames) {
+    const names = Array.isArray(sponsorNames) && sponsorNames.length > 0
+      ? sponsorNames
+      : selectedSponsors.map(s => s.sponsor_name)
+    if (names.length === 0) return { ok: false, error: 'Tidak ada sponsor terpilih.' }
+
+    const existingByName = new Map((state.drafts || []).map(d => [d.sponsor_name, d]))
+    dispatch({ type: 'SET_DRAFT_PHASE', payload: 'generating' })
+    const freshByName = new Map()
+    let lastError = null
+
+    for (const name of names) {
+      const sponsor = selectedSponsors.find(s => s.sponsor_name === name)
+      if (!sponsor) continue
+      const inputValue = buildDraftInput(state.campaign, sponsor)
+      const result = await runFlow(FLOW_DRAFT, inputValue)
+      if (!result.ok) {
+        lastError = result.error
+        continue
+      }
+      const candidates = extractCandidates(result.data)
+      const rawText = candidates[0] || ''
+      const { subject: rawSubject, body: rawBody } = parseDraftOutput(rawText)
+      const { subject, body, leftovers } = mergeSubjectAndBody(rawSubject, rawBody, state.campaign, sponsor)
+
+      freshByName.set(name, {
+        sponsor_name: name,
+        to: existingByName.get(name)?.to ?? sponsor.contact_email ?? '',
+        subject,
+        body,
+        edited: false,
+        leftovers,
+      })
+    }
+
+    if (freshByName.size === 0) {
+      dispatch({ type: 'SET_DRAFT_PHASE', payload: 'error', error: lastError || 'Semua generate ulang gagal.' })
+      return { ok: false, error: lastError || 'Semua generate ulang gagal.' }
+    }
+
+    // Gabung: yang diregenerate pakai hasil baru, sisanya pertahankan.
+    const merged = [
+      ...selectedSponsors
+        .map(s => s.sponsor_name)
+        .filter(n => freshByName.has(n) || existingByName.has(n))
+        .map(n => freshByName.get(n) || existingByName.get(n)),
+      ...(state.drafts || []).filter(d => !selectedSponsors.some(s => s.sponsor_name === d.sponsor_name)),
+    ]
+    dispatch({ type: 'SET_DRAFTS', drafts: merged })
+    return { ok: true, count: freshByName.size, failed: names.length - freshByName.size, error: lastError }
   }
 
   function updateDraft(sponsorName, payload) {
@@ -444,6 +511,7 @@ export function StoreProvider({ children }) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+              userId: getComposioUserId(),
               connectedAccountId: state.composio.accountId,
               to: item.to,
               subject: item.subject,
@@ -513,7 +581,8 @@ export function StoreProvider({ children }) {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+            body: JSON.stringify({
+            userId: getComposioUserId(),
             connectedAccountId: state.composio.accountId,
             selfEmail: state.composio.accountEmail,
             threads,
@@ -548,10 +617,11 @@ export function StoreProvider({ children }) {
     dispatch({ type: 'SET_COMPOSIO', payload: { status: 'checking' } })
     const BACKEND = import.meta.env.VITE_COMPOSIO_BACKEND_URL || 'http://localhost:5000'
     try {
-      const res = await fetch(`${BACKEND}/api/composio/accounts?userId=default`)
+      const res = await fetch(`${BACKEND}/api/composio/accounts?userId=${encodeURIComponent(getComposioUserId())}`)
       const data = await res.json()
-      if (data.ok && data.accounts?.length > 0) {
-        const acc = data.accounts[0]
+      const active = data.ok ? (data.accounts || []).find(a => a.status === 'ACTIVE') || data.accounts[0] : null
+      if (data.ok && active) {
+        const acc = active
         dispatch({
           type: 'SET_COMPOSIO',
           payload: {
@@ -575,7 +645,7 @@ export function StoreProvider({ children }) {
       const res = await fetch(`${BACKEND}/api/composio/link`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: 'default' }),
+        body: JSON.stringify({ userId: getComposioUserId() }),
       })
       const data = await res.json()
       if (data.ok) {
@@ -596,7 +666,7 @@ export function StoreProvider({ children }) {
     if (!state.composio.accountId) return
     const BACKEND = import.meta.env.VITE_COMPOSIO_BACKEND_URL || 'http://localhost:5000'
     try {
-      const res = await fetch(`${BACKEND}/api/composio/accounts/${state.composio.accountId}`)
+      const res = await fetch(`${BACKEND}/api/composio/accounts/${state.composio.accountId}?userId=${encodeURIComponent(getComposioUserId())}`)
       const data = await res.json()
       if (data.ok && data.account?.status === 'ACTIVE') {
         dispatch({
@@ -630,7 +700,7 @@ export function StoreProvider({ children }) {
       runSearch,
       runDraft,
       regenerateDraft,
-      remergeDrafts,
+      regenerateManyDrafts,
       updateDraft,
       toggleSelected,
       addManualSponsors,

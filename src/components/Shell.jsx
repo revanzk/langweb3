@@ -80,7 +80,12 @@ export default function Shell() {
             <button className="sf-menu-btn" onClick={() => setDrawerOpen(o => !o)} aria-label="Menu">
               <IconMenu />
             </button>
-            <h1 className="sf-topbar-title">{title}</h1>
+            <div className="sf-topbar-titlewrap">
+              <h1 className="sf-topbar-title">{title}</h1>
+              {location.pathname === '/app' && (
+                <span className="sf-topbar-sub">Ringkasan performa sponsorship</span>
+              )}
+            </div>
             <div className="sf-topbar-right">
               <span className="sf-demo-chip">Demo</span>
               {showDraftBtn && (

@@ -1,18 +1,34 @@
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/store.jsx'
 import { RELATIONSHIP, DELIVERY } from '../lib/constants.js'
-import { bucketByWeek, funnel, relationshipDist } from '../lib/analytics.js'
-import { TrendChart, FunnelChart, DonutChart, REL_COLORS } from '../components/charts.jsx'
+import { bucketByDay, funnel, relationshipDist } from '../lib/analytics.js'
+import { DayLineChart, FunnelChart, DonutChart, REL_COLORS } from '../components/charts.jsx'
+
+const RANGE_OPTIONS = [7, 14, 30]
+
+function greeting() {
+  const h = new Date().getHours()
+  if (h < 11) return 'Selamat pagi'
+  if (h < 15) return 'Selamat siang'
+  if (h < 19) return 'Selamat sore'
+  return 'Selamat malam'
+}
 
 export default function DashboardHome() {
   const { state, outcomeCounts, setRelationship, checkReplies } = useStore()
+  const navigate = useNavigate()
+  const [range, setRange] = useState(14)
 
   const total = state.history.length
   const queued = state.queue.filter(q => q.status !== DELIVERY.SENT).length
   const pctOf = (a, b) => (b > 0 ? `${Math.round((a / b) * 100)}%` : '—')
+  const replyRate = pctOf(outcomeCounts.dibalas, outcomeCounts.terkirim)
 
-  const trend = bucketByWeek(state.history, 8)
+  const trend = bucketByDay(state.history, range)
   const funnelData = funnel(state.history)
   const donutData = relationshipDist(state.history)
+  const todayId = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
   const recent = [...state.history].sort((a, b) => b.at - a.at).slice(0, 5)
   const sentList = state.history.filter(h => h.delivery === DELIVERY.SENT).sort((a, b) => b.at - a.at)
@@ -23,32 +39,58 @@ export default function DashboardHome() {
 
   return (
     <div style={s.root}>
+      {/* Hero */}
+      <div className="db-hero">
+        <div>
+          <h2 className="db-hero-title">{greeting()} 👋</h2>
+          <p className="db-hero-sub">{todayId}</p>
+          <div className="db-hero-chips">
+            <span className="db-hero-chip">✉ {outcomeCounts.terkirim} terkirim</span>
+            <span className="db-hero-chip">↩ {outcomeCounts.dibalas} dibalas</span>
+            <span className="db-hero-chip">◎ respons {replyRate}</span>
+            {queued > 0 && <span className="db-hero-chip">⏳ {queued} antre</span>}
+          </div>
+        </div>
+        <div className="db-hero-actions">
+          <button className="db-hero-primary" onClick={() => navigate('/app/cari-sponsor')}>
+            + Cari Sponsor Baru
+          </button>
+          <button
+            className="db-hero-ghost"
+            onClick={() => checkReplies()}
+            disabled={state.checkingReplies}
+          >
+            {state.checkingReplies ? 'Memeriksa...' : '↺ Cek Balasan'}
+          </button>
+        </div>
+      </div>
+
       {/* Stat boxes */}
       <div style={s.boxes}>
         <StatBox label="Terkirim" value={outcomeCounts.terkirim} sub={`${total} riwayat`} color="var(--state-info)" bg="var(--state-info-bg)" />
         <StatBox label="Dibalas" value={outcomeCounts.dibalas} sub={`${pctOf(outcomeCounts.dibalas, outcomeCounts.terkirim)} dari terkirim`} color="var(--brand-500)" bg="var(--brand-100)" />
         <StatBox label="Diterima" value={outcomeCounts.diterima} sub={`${pctOf(outcomeCounts.diterima, outcomeCounts.dibalas)} dari dibalas`} color="var(--state-success)" bg="var(--state-success-bg)" />
         <StatBox label="Ditolak" value={outcomeCounts.ditolak} sub="cabang keluar funnel" color="var(--state-danger)" bg="var(--state-danger-bg)" />
-        <StatBox label="Dalam Antrean" value={queued} sub="belum terkirim" color="var(--text-2)" bg="var(--surface-muted)" />
       </div>
 
       <div style={s.grid2}>
-        {/* Tren pengiriman */}
+        {/* Grafik garis pengiriman per tanggal */}
         <div style={s.card}>
           <div style={s.cardHeader}>
-            <h3 style={s.cardTitle}>Tren Pengiriman</h3>
-            <span style={s.cardSub}>8 minggu terakhir</span>
+            <h3 style={s.cardTitle}>Pengiriman per Tanggal</h3>
+            <div style={s.rangeTabs}>
+              {RANGE_OPTIONS.map(n => (
+                <button
+                  key={n}
+                  style={{ ...s.rangeTab, ...(range === n ? s.rangeTabActive : {}) }}
+                  onClick={() => setRange(n)}
+                >
+                  {n} hari
+                </button>
+              ))}
+            </div>
           </div>
-          <TrendChart data={trend} />
-        </div>
-
-        {/* Funnel konversi */}
-        <div style={s.card}>
-          <div style={s.cardHeader}>
-            <h3 style={s.cardTitle}>Corong Konversi</h3>
-            <span style={s.cardSub}>% terhadap tahap sebelumnya</span>
-          </div>
-          <FunnelChart data={funnelData} />
+          <DayLineChart data={trend} />
         </div>
 
         {/* Donut status */}
@@ -59,7 +101,17 @@ export default function DashboardHome() {
           </div>
           <DonutChart data={donutData} />
         </div>
+      </div>
 
+      {/* Funnel konversi — full width */}
+      <div style={s.card}>
+        <div style={s.cardHeader}>
+          <h3 style={s.cardTitle}>Corong Konversi</h3>
+          <span style={s.cardSub}>% terhadap tahap sebelumnya</span>
+        </div>
+        <div style={{ maxWidth: 680 }}>
+          <FunnelChart data={funnelData} />
+        </div>
       </div>
 
       <div style={s.grid2}>
@@ -150,7 +202,7 @@ export default function DashboardHome() {
 
 function StatBox({ label, value, sub, color, bg }) {
   return (
-    <div style={{ ...s.statBox, background: bg }}>
+    <div className="lift" style={{ ...s.statBox, background: `linear-gradient(135deg, ${bg} 0%, var(--surface) 145%)`, border: '1px solid var(--border-subtle)' }}>
       <span style={{ ...s.statVal, color }}>{value}</span>
       <span style={{ ...s.statLabel, color }}>{label}</span>
       {sub && <span style={{ ...s.statSub, color }}>{sub}</span>}
@@ -182,6 +234,13 @@ const s = {
   cardHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, gap: 10 },
   cardTitle: { fontSize: 15, fontWeight: 700, color: 'var(--text-1)', margin: 0 },
   cardSub: { fontSize: 12, color: 'var(--text-3)' },
+  rangeTabs: { display: 'flex', gap: 4 },
+  rangeTab: {
+    padding: '4px 10px', borderRadius: 9999, fontSize: 12,
+    border: '1px solid var(--border-subtle)', background: 'var(--surface-muted)',
+    color: 'var(--text-3)', cursor: 'pointer',
+  },
+  rangeTabActive: { background: 'var(--brand-500)', color: '#fff', borderColor: 'var(--brand-500)' },
   empty: { fontSize: 13, color: 'var(--text-3)', textAlign: 'center', padding: '20px 0' },
   activityItem: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border-subtle)' },
   activityAvatar: { width: 32, height: 32, borderRadius: 8, background: 'var(--brand-100)', color: 'var(--brand-500)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, flexShrink: 0 },

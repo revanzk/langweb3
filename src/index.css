@@ -51,3 +51,70 @@ input, textarea, select {
     display: none;
   }
 }
+
+/* Dashboard lift-on-hover */
+.lift { transition: transform 150ms ease, box-shadow 150ms ease; }
+.lift:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(90, 72, 214, 0.12); }
+
+/* Dashboard hero (class-based agar tidak bergantung pada HMR inline style) */
+.db-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  padding: 28px 30px;
+  background: linear-gradient(135deg, var(--brand-600) 0%, var(--brand-400) 100%);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.db-hero::before {
+  content: '';
+  position: absolute;
+  right: -70px;
+  top: -70px;
+  width: 230px;
+  height: 230px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+}
+.db-hero::after {
+  content: '';
+  position: absolute;
+  right: 60px;
+  bottom: -90px;
+  width: 170px;
+  height: 170px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+}
+.db-hero > * { position: relative; z-index: 1; }
+.db-hero-title { font-size: 28px; font-weight: 800; margin: 0; color: #fff; letter-spacing: -0.5px; }
+.db-hero-sub { font-size: 13px; margin: 6px 0 12px; color: rgba(255, 255, 255, 0.88); }
+.db-hero-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.db-hero-chip {
+  font-size: 12px; font-weight: 600;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: #fff; padding: 4px 12px; border-radius: 9999px;
+}
+.db-hero-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.db-hero-primary {
+  padding: 10px 22px; background: #fff; color: var(--brand-600);
+  border: none; border-radius: 9999px; cursor: pointer; font-size: 14px; font-weight: 700;
+  font-family: inherit; transition: transform 150ms ease, box-shadow 150ms ease;
+}
+.db-hero-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2); }
+.db-hero-ghost {
+  padding: 10px 22px; background: rgba(255, 255, 255, 0.15); color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.55); border-radius: 9999px; cursor: pointer;
+  font-size: 14px; font-weight: 600; font-family: inherit; transition: background 150ms ease;
+}
+.db-hero-ghost:hover { background: rgba(255, 255, 255, 0.25); }
+.db-hero-ghost:disabled { opacity: 0.6; cursor: default; }
+
+/* Topbar subtitle (judul halaman) */
+.sf-topbar-titlewrap { display: flex; flex-direction: column; line-height: 1.25; flex: 1; min-width: 0; }
+.sf-topbar-sub { font-size: 11px; font-weight: 400; color: var(--text-3, #9A97AC); }

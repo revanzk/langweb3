@@ -13,37 +13,47 @@ function Empty({ text }) {
   return <div style={c.empty}>{text || 'Belum ada data.'}</div>
 }
 
-// ── Tren area+line pengiriman per minggu ────────────────────────────────────────
-export function TrendChart({ data }) {
+// ── Grafik garis pengiriman per tanggal ─────────────────────────────────────────
+// data: [{ key: 'YYYY-MM-DD', label: '12 Jan', count }]. Label direnggangkan
+// otomatis agar tidak bertumpuk pada rentang panjang.
+export function DayLineChart({ data }) {
   const vals = (data || []).map(d => d.count)
   if (vals.length === 0 || vals.every(v => v === 0)) {
-    return <Empty text="Belum ada pengiriman." />
+    return <Empty text="Belum ada pengiriman di rentang ini." />
   }
   const W = 600, H = 190, PL = 30, PR = 8, PT = 14, PB = 30
   const max = Math.max(...vals, 1)
   const n = vals.length
+  const step = Math.max(1, Math.ceil(n / 8))
   const x = i => PL + (n === 1 ? (W - PL - PR) / 2 : (i / (n - 1)) * (W - PL - PR))
   const y = v => PT + (1 - v / max) * (H - PT - PB)
   const pts = vals.map((v, i) => `${x(i)},${y(v)}`).join(' ')
   const area = `${PL},${y(0)} ${pts} ${x(n - 1)},${y(0)}`
   const ticks = [0, Math.ceil(max / 2), max]
+  const gid = `dlg${n}`
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block' }}>
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--brand-400)" stopOpacity="0.45" />
+          <stop offset="100%" stopColor="var(--brand-400)" stopOpacity="0.05" />
+        </linearGradient>
+      </defs>
       {ticks.map(t => (
         <g key={t}>
           <line x1={PL} x2={W - PR} y1={y(t)} y2={y(t)} stroke="var(--border-subtle)" strokeDasharray="3 3" />
           <text x={PL - 5} y={y(t) + 3} textAnchor="end" fontSize="9" fill="var(--text-3)">{t}</text>
         </g>
       ))}
-      <polygon points={area} fill="var(--brand-100)" opacity="0.7" />
+      <polygon points={area} fill={`url(#${gid})`} />
       <polyline points={pts} fill="none" stroke="var(--brand-500)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
       {vals.map((v, i) => (
-        <g key={i}>
-          <circle cx={x(i)} cy={y(v)} r="4" fill="var(--brand-500)" stroke="#fff" strokeWidth="1.5">
+        <g key={data[i].key}>
+          <circle cx={x(i)} cy={y(v)} r={v > 0 ? 4 : 2.5} fill={v > 0 ? 'var(--brand-500)' : 'var(--border-subtle)'} stroke="#fff" strokeWidth="1.5">
             <title>{data[i].label}: {v} terkirim</title>
           </circle>
-          {(n <= 8 || i % 2 === 0) && (
+          {(i % step === 0 || i === n - 1) && (
             <text x={x(i)} y={H - 10} textAnchor="middle" fontSize="9" fill="var(--text-3)">{data[i].label}</text>
           )}
         </g>

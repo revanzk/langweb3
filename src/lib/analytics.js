@@ -8,41 +8,31 @@ function toDate(v) {
   return isNaN(d.getTime()) ? null : d
 }
 
-function startOfWeekMonday(d) {
-  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate())
-  const day = (x.getDay() + 6) % 7 // Senin = 0
-  x.setDate(x.getDate() - day)
-  x.setHours(0, 0, 0, 0)
-  return x
-}
-
-// Kiriman (delivery Sent) per minggu, n minggu terakhir termasuk minggu ini.
-// Returns [{ key, label, count }] — minggu kosong tetap ada dengan count 0.
-export function bucketByWeek(history, n = 8, now = new Date()) {
-  const weeks = []
-  const base = startOfWeekMonday(now)
+// Kiriman (delivery Sent) per tanggal, n hari terakhir termasuk hari ini.
+// Returns [{ key: 'YYYY-MM-DD', label: '12 Jan', count }] — hari kosong tetap
+// ada dengan count 0. Entri tanpa tanggal valid dilewati.
+export function bucketByDay(history, n = 14, now = new Date()) {
+  const days = []
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   for (let i = n - 1; i >= 0; i--) {
-    const start = new Date(base)
-    start.setDate(start.getDate() - i * 7)
-    const end = new Date(start)
-    end.setDate(end.getDate() + 7)
-    weeks.push({
-      key: start.toISOString().slice(0, 10),
-      label: start.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
-      start: start.getTime(),
-      end: end.getTime(),
+    const d = new Date(today)
+    d.setDate(d.getDate() - i)
+    days.push({
+      key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+      label: d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
       count: 0,
     })
   }
+  const byKey = new Map(days.map(d => [d.key, d]))
   for (const h of history || []) {
     if (h.delivery !== 'Sent') continue
     const d = toDate(h.at)
     if (!d) continue
-    const t = d.getTime()
-    const w = weeks.find(w => t >= w.start && t < w.end)
-    if (w) w.count++
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const slot = byKey.get(key)
+    if (slot) slot.count++
   }
-  return weeks.map(({ key, label, count }) => ({ key, label, count }))
+  return days
 }
 
 // Corong: Terkirim → Dibalas → Diterima. rate = pangsa tahap sebelumnya

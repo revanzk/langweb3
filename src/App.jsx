@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { StoreProvider } from './store/store.jsx'
 import Shell from './components/Shell.jsx'
+import Landing from './landing/Landing.jsx'
 import DashboardHome from './dashboard/DashboardHome.jsx'
 import CariSponsor from './dashboard/CariSponsor.jsx'
 import Draft from './dashboard/Draft.jsx'
@@ -40,7 +41,8 @@ export default function App() {
     <StoreProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Navigate to="/app" replace />} />
+          {/* Landing publik sponsorQu */}
+          <Route path="/" element={<Landing />} />
           <Route path="/app" element={<Shell />}>
             <Route index element={<DashboardHome />} />
             {/* Cari Sponsor: satu halaman (form + hasil + kampanye) */}
@@ -59,7 +61,7 @@ export default function App() {
             <Route path="riwayat" element={<Riwayat />} />
             <Route path="setting" element={<Setting />} />
           </Route>
-          <Route path="*" element={<Navigate to="/app" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </StoreProvider>

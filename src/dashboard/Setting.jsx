@@ -5,7 +5,13 @@ export default function Setting() {
   const { state, resetFlow, resetAll } = useStore()
   const [langflowHealth, setLangflowHealth] = useState(null)
   const [backendHealth, setBackendHealth] = useState(null)
-  const [debug, setDebug] = useState(() => localStorage.getItem('sf_debug') || 'env')
+  const [debug, setDebug] = useState(() => {
+    try {
+      return localStorage.getItem('sq_debug') || localStorage.getItem('sf_debug') || 'env'
+    } catch {
+      return 'env'
+    }
+  })
 
   useEffect(() => {
     const LANGFLOW = import.meta.env.VITE_LANGFLOW_URL || 'http://localhost:7860'
@@ -18,7 +24,10 @@ export default function Setting() {
   function handleDebugChange(e) {
     const val = e.target.value
     setDebug(val)
-    localStorage.setItem('sf_debug', val)
+    try {
+      localStorage.setItem('sq_debug', val)
+      localStorage.removeItem('sf_debug')
+    } catch { /* ignore */ }
   }
 
   return (

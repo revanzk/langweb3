@@ -23,11 +23,20 @@ export default function Hasil() {
 
   const [filter, setFilter] = useState('Semua')
   const [sort, setSort] = useState('score_desc')
-  const [view, setView] = useState(() => localStorage.getItem('sf_view') || 'card')
+  const [view, setView] = useState(() => {
+    try {
+      return localStorage.getItem('sq_view') || localStorage.getItem('sf_view') || 'card'
+    } catch {
+      return 'card'
+    }
+  })
 
   function switchView(v) {
     setView(v)
-    localStorage.setItem('sf_view', v)
+    try {
+      localStorage.setItem('sq_view', v)
+      localStorage.removeItem('sf_view')
+    } catch { /* ignore */ }
   }
 
   const filters = ['Semua', ...RELEVANCE_LEVEL_LIST, 'Manual']

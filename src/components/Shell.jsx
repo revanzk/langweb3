@@ -29,7 +29,7 @@ export default function Shell() {
   const location = useLocation()
   const { state } = useStore()
 
-  const title = TITLE_MAP.find(([path]) => location.pathname.startsWith(path))?.[1] || 'SponsorFinder'
+  const title = TITLE_MAP.find(([path]) => location.pathname.startsWith(path))?.[1] || 'sponsorQu'
 
   // Show "Kembali ke Draft" button when there are unsent drafts and we're not already on draft page
   const hasPendingDraft = state.drafts?.length > 0 &&
@@ -55,7 +55,7 @@ export default function Shell() {
         {/* Sidebar */}
         <aside className={`sf-sidebar${drawerOpen ? ' sf-sidebar--open' : ''}`}>
           <div className="sf-logo">
-            <span className="sf-logo-text">SponsorFinder</span>
+            <span className="sf-logo-text">sponsor<span className="sf-logo-accent">Qu</span></span>
           </div>
           <nav className="sf-nav">
             {NAV.map(({ to, label, end, icon: Icon }) => (
@@ -162,6 +162,10 @@ const CSS = `
   font-weight: 700;
   color: var(--brand-500, #6D5AE6);
   letter-spacing: -0.3px;
+}
+.sf-logo-accent {
+  color: var(--brand-600, #5A48D6);
+  font-weight: 800;
 }
 
 .sf-nav {

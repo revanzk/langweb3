@@ -78,11 +78,12 @@ export const FLOW_SEARCH = import.meta.env.VITE_LANGFLOW_SEARCH_FLOW_ID || '5d9c
 export const FLOW_DRAFT = import.meta.env.VITE_LANGFLOW_DRAFT_FLOW_ID || '45313891'
 
 // ── Debug panel visibility (Pengaturan → Debug Panel) ─────────────────────────
-// Mode tersimpan di localStorage 'sf_debug': 'always' | 'never' | 'env'.
+// Mode tersimpan di localStorage 'sq_debug': 'always' | 'never' | 'env'.
 // 'env' mengikuti VITE_DEBUG_LANGFLOW=true.
+// Key lama 'sf_debug' tetap dibaca sebagai fallback migrasi ke sponsorQu.
 export function getDebugMode() {
   try {
-    return localStorage.getItem('sf_debug') || 'env'
+    return localStorage.getItem('sq_debug') || localStorage.getItem('sf_debug') || 'env'
   } catch {
     return 'env'
   }

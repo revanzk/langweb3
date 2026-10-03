@@ -38,7 +38,13 @@ export default function CariSponsor() {
   // ── Hasil filters ───────────────────────────────────────────────────────────
   const [filter, setFilter] = useState('Semua')
   const [sort, setSort] = useState('score_desc')
-  const [view, setView] = useState(() => localStorage.getItem('sf_view') || 'card')
+  const [view, setView] = useState(() => {
+    try {
+      return localStorage.getItem('sq_view') || localStorage.getItem('sf_view') || 'card'
+    } catch {
+      return 'card'
+    }
+  })
 
   // ── Campaign form ───────────────────────────────────────────────────────────
   const cam = state.campaign
@@ -123,7 +129,10 @@ export default function CariSponsor() {
 
   function switchView(v) {
     setView(v)
-    localStorage.setItem('sf_view', v)
+    try {
+      localStorage.setItem('sq_view', v)
+      localStorage.removeItem('sf_view')
+    } catch { /* ignore */ }
   }
 
   // ── Campaign handlers ───────────────────────────────────────────────────────

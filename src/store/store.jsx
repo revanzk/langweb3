@@ -55,15 +55,19 @@ function newId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
 }
 
-// Per-user Composio userId: UUID stabil per-browser (localStorage `sf_user_id`).
+// Per-user Composio userId: UUID stabil per-browser (localStorage `sq_user_id`).
 // Tiap pemakai login Gmail masing-masing; jangan pakai email (bisa berubah)
 // dan jangan hardcode 'default' (berbagi akun antar user).
 function getComposioUserId() {
   try {
-    const KEY = 'sf_user_id'
-    let id = localStorage.getItem(KEY)
+    const KEY = 'sq_user_id'
+    const LEGACY_KEY = 'sf_user_id'
+    let id = localStorage.getItem(KEY) || localStorage.getItem(LEGACY_KEY)
     if (!id) {
       id = `u_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`
+      localStorage.setItem(KEY, id)
+    } else if (!localStorage.getItem(KEY)) {
+      // Migrasi sekali jalan dari key lama
       localStorage.setItem(KEY, id)
     }
     return id
@@ -203,7 +207,8 @@ function reducer(state, action) {
 }
 
 // ── Persistence ───────────────────────────────────────────────────────────────
-const STORAGE_KEY = 'sf_state_v1'
+const STORAGE_KEY = 'sq_state_v1'
+const LEGACY_STORAGE_KEY = 'sf_state_v1'
 const MAX_RAW_BYTES = 45 * 1024
 
 function stripRaw(state) {
@@ -244,12 +249,14 @@ function saveState(state) {
   try {
     const clean = stripRaw(state)
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ v: 1, savedAt: Date.now(), state: clean }))
+    // Bersihkan key lama setelah migrasi berhasil
+    try { localStorage.removeItem(LEGACY_STORAGE_KEY) } catch { /* ignore */ }
   } catch { /* quota exceeded — ignore */ }
 }
 
 function loadState() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY)
     if (!raw) return null
     const { state } = JSON.parse(raw)
     return normalizeTransients({ ...INITIAL_STATE, ...state })
@@ -807,7 +814,8 @@ export function StoreProvider({ children }) {
 
   function resetAll() {
     dispatch({ type: 'RESET_ALL' })
-    localStorage.removeItem(STORAGE_KEY)
+    try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
+    try { localStorage.removeItem(LEGACY_STORAGE_KEY) } catch { /* ignore */ }
   }
 
   return (

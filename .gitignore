@@ -1,0 +1,19 @@
+# Dependensi — install ulang via `npm install` / `npm run server:install`
+node_modules/
+server/node_modules/
+
+# Build output
+dist/
+
+# Environment — JANGAN PERNAH commit file berisi secret.
+# Yang di-commit hanya `.env.example` (placeholder).
+# Catatan: JANGAN menambahkan `*.json` di sini — file template
+# Langflow (`langflow/*.json`) HARUS bisa di-commit.
+.env
+.env.local
+*.local
+
+# OS & log
+.DS_Store
+Thumbs.db
+npm-debug.log*

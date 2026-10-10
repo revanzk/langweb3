@@ -1,425 +1,303 @@
-# SponsorQu
+# sponsorQu
 
-> Platform cerdas berbasis AI untuk membantu panitia event menemukan sponsor yang relevan, menyusun email sponsorship yang dipersonalisasi, dan mengelola seluruh kampanye penjangkauan sponsor, dalam satu alur kerja yang terintegrasi.
+> Platform pencari sponsor event berbasis AI untuk panitia: deskripsikan event sekali,
+> AI merangking sponsor yang relevan, draft email otomatis terpersonalisasi per perusahaan,
+> kirim via Gmail, dan pantau balasan — dalam satu alur tanpa ketik ulang.
 
----
-
-## ✨ Tentang Proyek
-
-**SponsorQu** adalah aplikasi web yang dirancang untuk menyederhanakan proses pencarian dan penghubungan sponsor bagi panitia event. Dengan menggabungkan kecerdasan buatan (AI), vector database sponsor, dan integrasi Gmail, SponsorQu memungkinkan panitia untuk:
-
-- Menemukan calon sponsor yang relevan hanya dengan mendeskripsikan event mereka
-- Mendapatkan rekomendasi sponsor berperingkat berdasarkan skor relevansi
-- Menghasilkan draft email sponsorship yang dipersonalisasi per perusahaan secara otomatis
-- Mengirim email langsung melalui akun Gmail yang terhubung
-- Memantau status respons dan hasil kampanye secara real-time
+Dokumen ini ditulis untuk **juri/evaluator**: berisi cara menjalankan aplikasi dari nol
+dan daftar lengkap fungsionalitas yang bisa diuji.
 
 ---
 
-## 💡 Latar Belakang
+## Daftar Isi
 
-SponsorQu lahir dari masalah nyata yang kami dengar berulang kali dari kalangan panitia event mahasiswa dan organisasi kemahasiswaan di Indonesia.
-
-Kami mengetahui bahwa setiap kali sebuah organisasi menyelenggarakan event, tantangan terbesar yang mereka hadapi bukan soal konsep acara, bukan soal teknis, melainkan soal **sponsorship**. Kami mendengar langsung betapa panjang dan melelahkannya prosesnya: mencari calon sponsor satu per satu secara manual, menyusun email dari nol untuk setiap perusahaan, menunggu balasan tanpa tahu apakah email bahkan sudah dibaca, lalu kehilangan jejak karena tidak ada sistem terpusat untuk memantaunya.
-
-Kami melihat betapa panitia dengan puluhan target sponsor harus membuka LinkedIn, Google, dan berbagai referensi hanya untuk menemukan satu kontak yang tepat, dan ini dikerjakan oleh divisi sponsorship yang seringkali hanya terdiri dari 2 hingga 3 orang (Showcare, 2026). Kami memahami bahwa email yang seharusnya dipersonalisasi akhirnya menjadi generik karena keterbatasan waktu dan tenaga, ditulis terburu-buru di sela-sela tanggung jawab kepanitiaan lain yang tidak kalah banyaknya. Dan kami menyadari bahwa ketika semua email sudah terkirim pun, tidak ada cara mudah untuk tahu siapa yang sudah membalas, siapa yang belum, dan mana yang perlu di-follow up, karena tidak ada sistem, hanya thread email yang berserakan.
-
-**SponsorQu dibangun untuk mengakhiri siklus itu.** Cukup deskripsikan event sekali, biarkan AI yang merangking sponsor yang benar-benar relevan, menyusun email yang dipersonalisasi per perusahaan, dan mencatat setiap respons, semuanya dalam satu alur yang tidak mengharuskan panitia mengetik ulang data dari awal.
+- [Paket Harga](#paket-harga)
+- [Yang Bisa Dilakukan](#yang-bisa-dilakukan)
+- [Prasyarat](#prasyarat)
+- [Cara Menjalankan](#cara-menjalankan)
+- [Environment Variables](#environment-variables)
+- [Scripts npm](#scripts-npm)
+- [Struktur Proyek](#struktur-proyek)
+- [Demo Script 7 Menit](#demo-script-7-menit)
+- [Stack Teknologi](#stack-teknologi)
+- [Batas Sistem & Enum](#batas-sistem--enum)
+- [Troubleshooting](#troubleshooting)
+- [Keamanan](#keamanan)
+- [Dokumen Internal](#dokumen-internal)
 
 ---
 
-## 🎯 Target Pasar
+## Paket Harga
 
-SponsorQu dirancang untuk menjawab kebutuhan segmen yang sangat spesifik namun luas:
+| Tier | Harga | Isi |
+|---|---|---|
+| **Starter** | Rp0 (free tier) | 3–5 sponsor per pencarian, 3x pencarian/hari, draft + email otomatis, kirim maks 5 email/sesi, monitoring 10 sponsor |
+| **Elevate** | Rp49.000/bulan | 10+ sponsor per pencarian, limit 2–3x lipat Starter, kirim 20 email/sesi, monitoring 50 sponsor, notifikasi langsung |
+| **Executive** | Hubungi kami | Semua fitur Elevate + SSO, dukungan prioritas, pendampingan mencari sponsor, onboarding & template khusus |
 
-### Pengguna Utama (User)
-| Segmen | Deskripsi |
+---
+
+## Yang Bisa Dilakukan
+
+### Halaman & Rute
+
+| Rute | Halaman | Fungsi — apa yang bisa dilakukan juri |
+|---|---|---|
+| `/` | Landing page publik | Lihat hero + mock hasil AI, marquee industri, 4 fitur, 4 langkah cara kerja, demo tab interaktif (Hasil AI / Draft Email / Antrean), statistik, harga, FAQ, CTA ke aplikasi |
+| `/app` | Dashboard | Lihat 4 kotak outcome (Terkirim, Dibalas, Diterima, Ditolak), grafik pengiriman per tanggal (7/14/30 hari), donut distribusi status, corong konversi, 5 aktivitas terbaru, status antrean, daftar terkirim dengan tombol outcome + info balasan, tombol global Cek Balasan |
+| `/app/cari-sponsor` | Cari Sponsor (3 langkah satu halaman) | **1)** Isi form pencarian (jenis event + catatan event, min 30 karakter) lalu Cari — AI merangking **maks 5 sponsor** dengan skor 0–100, level relevansi, alasan, bentuk dukungan; filter level, sortir, toggle Kartu/Daftar; centang sponsor. **2)** Isi Detail Kampanye (12 field: nama/tanggal/lokasi/penyelenggara event, kebutuhan sponsorship, tone email, info tambahan, nama/jabatan/kontak/email PIC, website acara, link proposal) — konteks event terbawa otomatis. **3)** Generate Draft Email |
+| `/app/cari-sponsor/draft` | Draft & Kirim | Lihat tab draft per sponsor; kolom `To` selalu bisa diedit; placeholder `[kurung]` yang belum terisi ditandai kuning dan **memblokir tombol kirim**; Merge Ulang (tanpa AI) vs Generate Ulang (AI, perlu konfirmasi); hubungkan Gmail via OAuth; pre-send check (jumlah, penerima, warning >10); antrean `Queued → Sending → Sent/Failed` + retry per item; riwayat terisi otomatis |
+| `/app/tambah-sponsor` | Tambah Sponsor manual | Tambah sponsor yang sudah dikenal lewat baris bulk (nama + email, tambah/hapus baris, error per baris, **tolak duplikat** case-insensitive); sponsor manual tampil dengan badge `Manual` dan skor `–/100`; otomatis terpilih |
+| `/app/riwayat` | Riwayat | Lihat 4 kotak outcome, filter 6 status hubungan + Semua, tabel (Sponsor/Event/Draft/Delivery/Relationship/Aksi/Updated), ubah outcome per baris (Dibalas/Diterima/Ditolak/Diacuhkan), Cek Balasan per baris & global, snippet balasan |
+| `/app/setting` | Pengaturan | Lihat status live Langflow (`:7860`) & backend (`:5000`), atur mode debug panel (env/selalu/sembunyi), lihat batas sistem, reset alur (riwayat tetap) atau reset semua |
+
+### Aturan main yang dijaga aplikasi
+
+- Rekomendasi AI **maks 5 sponsor**; tidak ada data yang dikarang — field kosong disembunyikan (dukungan kosong → *tidak diketahui*).
+- Email hanya terkirim bila `To` terisi **dan** tidak ada placeholder tersisa (`leftover` memblokir kirim).
+- Maks **10 email per sesi** — diperingatkan, tidak pernah dipotong diam-diam.
+- Status pengiriman `Sent` hanya setelah provider Gmail sukses; retry per penerima.
+- Semua state tersimpan di `localStorage` — **refresh tidak menghilangkan data**.
+
+---
+
+## Prasyarat
+
+| Kebutuhan | Keterangan |
 |---|---|
-| **Panitia Event Mahasiswa** | BEM, HIMA, UKM, dan komunitas kampus yang aktif menyelenggarakan seminar, lomba, atau festival |
-| **Event Organizer Indie** | Tim kecil yang menggelar konser, pameran, atau gathering komunitas dengan anggaran terbatas |
-| **Startup & Komunitas Teknologi** | Penyelenggara hackathon, bootcamp, dan meetup yang membutuhkan sponsor industri tech |
-| **Panitia Event Sosial & Olahraga** | Komunitas yang menggelar kompetisi, bakti sosial, atau event komunitas reguler |
-
-### Pembeli / Pengambil Keputusan (Buyer)
-| Segmen | Peran |
-|---|---|
-| **Ketua Divisi Sponsorship** | Pengguna langsung yang paling merasakan pain point |
-| **Ketua Umum Organisasi** | Pengambil keputusan pembelian paket berbayar |
-| **Manajer Program Kampus** | Universitas yang ingin memfasilitasi UKM dengan tool manajemen event |
-
-### Ukuran Pasar
-Indonesia memiliki lebih dari **4.500 perguruan tinggi** dengan ribuan organisasi kemahasiswaan aktif, ditambah ekosistem komunitas dan startup yang terus berkembang. Rata-rata setiap organisasi mengadakan 2-6 event per tahun, dan hampir semua membutuhkan sponsorship. Ini adalah pasar yang besar, underserved, dan belum pernah disentuh oleh solusi yang benar-benar terintegrasi.
+| Node.js 20+ dan npm | Terverifikasi di Node v24 / npm v11 |
+| **Langflow lokal di `:7860`** | Wajib untuk alur AI (cari sponsor + draft email). Lihat [Cara Menjalankan](#cara-menjalankan) langkah 2 |
+| Akun Composio (opsional) | Hanya dibutuhkan untuk **mengirim email asli** via Gmail. Tanpa ini, juri tetap bisa menguji Cari → Kampanye → Draft sampai pre-send check |
 
 ---
 
-## 🚀 Ekspansi & Skalabilitas Bisnis
+## Cara Menjalankan
 
-SponsorQu dibangun dengan visi jangka panjang melampaui tools sederhana.
+Jalankan perintah dari folder root repo.
 
-### Fase 1 - MVP (Saat Ini)
-Fokus pada alur inti: **Cari sponsor → Draft email → Kirim → Pantau**. Target pengguna awal adalah panitia event mahasiswa dan komunitas kecil yang paling merasakan pain point ini. Model monetisasi dimulai dari tier Starter gratis untuk membangun basis pengguna.
-
-### Fase 2 - Pertumbuhan
-- **Ekspansi database sponsor**: Memperluas vector database ke ratusan hingga ribuan perusahaan dari berbagai industri
-- **Kolaborasi tim**: Fitur multi-user agar seluruh divisi sponsorship bisa bekerja dalam satu workspace
-- **Template library**: Koleksi template email per industri (FMCG, Fintech, Telko, F&B) yang sudah terbukti efektif
-- **Analytics lanjutan**: Conversion rate per industri, waktu respons rata-rata, dan benchmark antar event
-
-### Fase 3 - Skalabilitas Platform
-- **Open Sponsor Board**: Papan posting dua arah, panitia bisa post kebutuhan sponsorship, perusahaan bisa post program open sponsorship mereka, keduanya bisa saling menemukan tanpa perantara
-- **API untuk integrasi**: Memungkinkan platform manajemen event lain (seperti Eventbrite-style lokal) untuk mengintegrasikan fitur pencarian sponsor SponsorQu
-- **White-label untuk kampus**: Universitas bisa mengadopsi SponsorQu sebagai platform resmi untuk seluruh unit kegiatan mahasiswanya
-- **Ekspansi regional**: Menyasar pasar Asia Tenggara (Malaysia, Filipina) yang memiliki ekosistem event kampus serupa
-
-### Model Bisnis
-| Sumber Pendapatan | Mekanisme |
-|---|---|
-| **Freemium (Starter)** | Akuisisi pengguna gratis, konversi ke berbayar setelah merasakan nilai |
-| **Subscription (Elevate)** | Rp49.000/bulan per organisasi, recurring revenue yang stabil |
-| **Enterprise (Executive)** | Kontrak tahunan dengan kampus atau EO besar, custom pricing |
-| **Sponsor Featured Listing** | Perusahaan membayar untuk muncul lebih tinggi dalam rekomendasi relevan (jangka panjang) |
-| **Open Sponsor Board Premium** | Perusahaan membayar untuk listing Open Sponsorship yang lebih menonjol dan menjangkau lebih banyak panitia |
-
-
-
-## 🎯 Fitur Utama
-
-### 1. 🔍 Cari Sponsor (AI-Powered)
-Panitia cukup mengisi tiga informasi dasar jenis event, perkiraan peserta, dan catatan singkat. AI kemudian melakukan pencarian ke vector database sponsor dan merekomendasikan **maksimal 5 calon sponsor** yang paling relevan, lengkap dengan:
-- **Match Score** (0–100) dan Tingkat Relevansi
-- Alasan relevansi berbasis data nyata
-- Informasi kontak dan website
-
-### 2. ➕ Tambah Sponsor Manual
-Selain rekomendasi AI, pengguna dapat menambahkan sponsor secara manual (misalnya sponsor langganan atau hasil networking pribadi) yang langsung masuk ke dalam alur yang sama.
-
-### 3. 📋 Kampanye Sponsorship
-Setelah memilih sponsor, pengguna mengisi konteks kampanye (nama event, tanggal, lokasi, informasi PIC, dll.). Data ini dipakai oleh AI untuk menghasilkan email yang kontekstual dan spesifik per sponsor.
-
-### 4. ✉️ Draft & Kirim Email
-- AI membuat **satu template email per kampanye**, yang kemudian di-*merge* secara otomatis untuk setiap sponsor terpilih
-- Placeholder yang belum terisi disorot kuning dan **memblokir pengiriman** hingga diselesaikan, mencegah email setengah jadi terkirim
-- Email dikirim melalui **OAuth Gmail (Composio)**, kredensial tidak pernah tersimpan di kode
-
-### 5. 📊 Dashboard & Riwayat
-- 4 kotak status: **Terkirim, Dibalas, Diterima, Ditolak**
-- Grafik analitik SVG per event
-- Riwayat lengkap per sponsor dengan tombol update status
-- Pengecekan balasan email otomatis
-
-### 6. 📌 Open Sponsor Board *(Fitur Mendatang)*
-Fitur papan posting dua arah yang menghubungkan panitia event dengan perusahaan sponsor secara langsung dan transparan.
-
-**Dari sisi Panitia / Event Organizer:**
-- Posting kebutuhan sponsorship event secara publik: jenis event, tanggal, lokasi, estimasi peserta, dan jenis dukungan yang dibutuhkan
-- Postingan tampil di board terbuka yang bisa ditemukan oleh perusahaan yang sedang mencari event untuk disponsori
-- Terima tawaran langsung dari perusahaan tanpa harus mengirim email terlebih dahulu
-
-**Dari sisi Perusahaan / Sponsor:**
-- Posting pengumuman *open sponsorship*: industri event yang diminati, rentang anggaran, jenis dukungan yang ditawarkan (dana tunai, produk, media partner, dll.)
-- Panitia yang relevan bisa langsung mengajukan proposal melalui platform
-- Perusahaan mendapatkan eksposur organik ke komunitas event yang aktif
-
-> Fitur ini mengubah SponsorQu dari tools satu arah menjadi **platform marketplace dua arah** yang mempertemukan supply dan demand sponsorship secara efisien.
-
----
-
-## 🌐 Landing Page
-
-SponsorQu dilengkapi landing page publik (`/`) sebagai pintu masuk sebelum pengguna masuk ke dashboard aplikasi. Landing page terdiri dari beberapa seksi:
-
-| Seksi | Konten |
-|---|---|
-| **Hero** | Tagline, CTA utama, dan mock-up kartu sponsor + preview draft email |
-| **Fitur** | 4 kartu fitur utama (Cari Sponsor, Draft Otomatis, Kirim via Gmail, Dashboard) |
-| **Cara Kerja** | 4 langkah alur dari deskripsi event sampai email terkirim |
-| **Demo** | Preview statis hasil AI, draft email, dan status antrean pengiriman |
-| **Harga** | 3 tier paket (lihat bagian berikut) |
-| **FAQ** | 5 pertanyaan umum seputar keamanan, batas, dan cara pakai |
-| **Footer** | Navigasi produk, link aplikasi, dan kredit |
-
-Route: `/` menampilkan landing page; `/app` membuka dashboard aplikasi.
-
----
-
-## 💰 Paket Harga
-
-SponsorQu tersedia dalam tiga tier, semua memakai alur AI yang sama tanpa kartu kredit untuk mencoba.
-
-### Starter - Rp0 (Free)
-> Untuk mencoba alur lengkap tanpa biaya.
-
-- 3-5 sponsor per pencarian, 3x pencarian per hari
-- Draft email + kirim otomatis
-- Kirim maksimal **5 email per sesi**
-- Monitoring hingga **10 sponsor**
-
----
-
-### Elevate - Rp49.000/bulan ⭐ Paling Dipilih
-> Untuk kepanitiaan aktif dengan banyak target sponsor.
-
-- 10+ sponsor per pencarian
-- Limit 2-3x lipat dari Starter
-- Kirim maksimal **20 email per sesi**
-- Monitoring hingga **50 sponsor**
-- Notifikasi langsung saat ada balasan
-
----
-
-### Executive - Hubungi Kami
-> Untuk tim, kampus, dan organisasi multi-event.
-
-- Semua fitur Elevate
-- SSO (Single Sign-On)
-- Dukungan prioritas
-- Pendampingan mencari sponsor
-- Onboarding dan template email khusus
-
----
-
-## 🏗️ Arsitektur & Stack Teknologi
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                     Browser (React)                     │
-│  Vite 6 + React 19 + React Router 7 ,  Port :5173     │
-└────────────────────────┬────────────────────────────────┘
-                         │ REST API
-┌────────────────────────▼────────────────────────────────┐
-│              Express Backend ,  Port :5000             │
-│   /api/health  /api/composio/*  /api/send-email         │
-│   /api/check-replies                                    │
-└────────┬───────────────────────────────┬────────────────┘
-         │ Langflow API                  │ Composio API
-┌────────▼─────────┐           ┌─────────▼───────────────┐
-│  Langflow :7860  │           │  Gmail via Composio     │
-│  Flow Search     │           │  (OAuth Managed Auth)   │
-│  Flow Draft      │           └─────────────────────────┘
-└──────────────────┘
-```
-
-| Layer | Teknologi |
-|---|---|
-| Frontend | React 19, React Router 7, Vite 6 |
-| Backend | Express 4, Node.js |
-| AI Orchestration | Langflow (self-hosted) |
-| Vector Database | Astra DB (via Langflow) |
-| Email Integration | Composio + Gmail OAuth |
-| Styling | Vanilla CSS + CSS Variables |
-
----
-
-## 📁 Struktur Proyek
-
-```
-SponsorQu/
-├── src/
-│   ├── App.jsx                  # Router & route guards
-│   ├── main.jsx                 # Entry point
-│   ├── index.css                # Design system & tokens
-│   ├── components/
-│   │   └── Shell.jsx            # Sidebar + topbar layout
-│   ├── dashboard/
-│   │   ├── DashboardHome.jsx    # Statistik & analitik
-│   │   ├── CariSponsor.jsx      # Form pencarian AI
-│   │   ├── Hasil.jsx            # Daftar hasil sponsor
-│   │   ├── Kampanye.jsx         # Form konteks kampanye
-│   │   ├── Draft.jsx            # Preview, edit & kirim email
-│   │   ├── TambahSponsor.jsx    # Tambah sponsor manual
-│   │   ├── Riwayat.jsx          # Histori pengiriman
-│   │   └── Setting.jsx          # Konfigurasi & debug
-│   ├── store/
-│   │   └── store.jsx            # Central state management
-│   └── lib/
-│       ├── constants.js         # Enums & batas sistem
-│       ├── validators.js        # Validasi form
-│       ├── langflow.js          # Langflow API client
-│       ├── merge.js             # Placeholder merger
-│       └── analytics.js        # Kalkulasi statistik
-├── server/
-│   ├── index.js                 # Express server & endpoints
-│   └── composio.js              # Composio client
-├── .env.example                 # Template environment variables
-├── vite.config.js
-└── package.json
-```
-
----
-
-## 🚀 Cara Menjalankan
-
-### Prasyarat
-- Node.js >= 18
-- Langflow berjalan di `localhost:7860`
-- Akun Composio dengan project API key
-
-### 1. Clone & Install Dependensi
+### 1. Clone & install dependensi
 
 ```bash
-# Install frontend dependencies
+git clone <url-repo-ini>
+cd <nama-folder>
+
+# Install frontend
 npm install
 
-# Install backend dependencies
-npm --prefix server install
+# Install backend (Express)
+npm run server:install
 ```
 
-### 2. Konfigurasi Environment
+### 2. Siapkan Langflow (wajib untuk alur AI)
 
-Salin file `.env.example` menjadi `.env`, lalu isi nilainya:
+Aplikasi memanggil **2 flow** di Langflow lokal (`http://localhost:7860`):
 
-```ini
-# URL Langflow (biasanya localhost)
-VITE_LANGFLOW_URL=http://localhost:7860
-VITE_LANGFLOW_API_KEY=<api-key-dari-langflow>
+| Flow | File template | Fungsi |
+|---|---|---|
+| Search | `langflow/sposnorQu Flow.json` | Query planner + vector search + ranker + JSON parser → rekomendasi sponsor |
+| Draft | `langflow/draft email.json` | Merapikan template menjadi draft `Subjek:` + `Isi:` dengan placeholder `[kurung]` |
 
-# Flow IDs (dari Langflow UI -> Flow Settings)
-VITE_LANGFLOW_SEARCH_FLOW_ID=<flow-id-pencarian>
-VITE_LANGFLOW_DRAFT_FLOW_ID=<flow-id-draft>
+Langkah:
 
-# URL Express backend
-VITE_COMPOSIO_BACKEND_URL=http://localhost:5000
-
-# Composio API key (server-side only -- JANGAN tambahkan VITE_)
-COMPOSIO_API_KEY=<api-key-dari-composio>
-
-# Mode debug (true | false)
-VITE_DEBUG_LANGFLOW=true
+```text
+1. Jalankan Langflow dan buka http://localhost:7860
+2. Import kedua file JSON di atas (drag & drop ke kanvas Langflow)
+3. Pastikan vector database sponsor sudah terisi (cabang ingest File → Split → Astra di flow search)
+4. Catat Flow ID masing-masing flow (ada di Flow Settings) — dipakai di langkah 3
 ```
 
-> **Keamanan**: `COMPOSIO_API_KEY` tidak boleh menggunakan prefix `VITE_`, kunci ini hanya boleh ada di sisi server dan tidak pernah terekspos ke browser.
+> Tanpa 2 flow ini, pencarian dan draft akan gagal dengan pesan error + panel debug
+> terbuka otomatis. Semua halaman lain (landing, dashboard, tambah manual, riwayat,
+> pengaturan) tetap bisa dibuka.
 
-### 3. Jalankan Aplikasi
-
-Buka **dua terminal** secara bersamaan:
+### 3. Buat file `.env`
 
 ```bash
-# Terminal 1, Backend Express
+# Windows (PowerShell)
+Copy-Item .env.example .env
+
+# macOS / Linux
+cp .env.example .env
+```
+
+Lalu isi minimal 4 nilai ini di `.env` (lihat tabel [Environment Variables](#environment-variables)):
+
+```ini
+VITE_LANGFLOW_URL=http://localhost:7860
+VITE_LANGFLOW_API_KEY=<api-key-langflow-kamu>
+VITE_LANGFLOW_SEARCH_FLOW_ID=<flow-id-search>
+VITE_LANGFLOW_DRAFT_FLOW_ID=<flow-id-draft>
+```
+
+> **Penting:** setelah membuat/mengubah `.env`, **restart** `npm run dev`
+> karena Vite menanam variabel `VITE_*` sekali saat start.
+
+### 4. Jalankan aplikasi (2 terminal)
+
+```bash
+# Terminal 1 — backend Express (:5000)
 npm run server
 
-# Terminal 2, Frontend Vite
+# Terminal 2 — frontend Vite (:5173)
 npm run dev
 ```
 
-### 4. Verifikasi Health Check
+### 5. Verifikasi health check
 
 ```bash
-# Langflow
+# Langflow — harus {"status":"ok"}
 curl http://localhost:7860/health
-# -> {"status":"ok"}
 
-# Backend
+# Backend — harus {"ok":true,"composioKey":true,...}
 curl http://localhost:5000/api/health
-# -> {"ok":true,"composioKey":true}
 ```
 
-Buka browser ke `http://localhost:5173`, aplikasi siap digunakan.
+`composioKey: true` berarti `COMPOSIO_API_KEY` terdeteksi (wajib untuk kirim email asli).
+
+### 6. Buka aplikasi
+
+```text
+http://localhost:5173
+```
+
+> Selalu buka lewat `localhost:5173` (bukan `127.0.0.1` atau IP LAN) —
+> backend hanya mengizinkan origin `localhost` (CORS).
 
 ---
 
-## 🔄 Alur Kerja Pengguna
+## Environment Variables
 
-```
-[Deskripsikan Event]
-        |
-[AI mencari & meranking sponsor] <-- Langflow Search Flow
-        |
-[Pilih Sponsor (maks. 5)]
-        |
-[Isi Konteks Kampanye & Info PIC]
-        |
-[AI generate template email] <-- Langflow Draft Flow
-        |
-[Review & edit draft per sponsor]
-        |
-[Hubungkan Gmail via OAuth]
-        |
-[Kirim email (maks. 10/sesi)]
-        |
-[Pantau status & respons]
-```
+| Nama | Dibaca oleh | Wajib? | Contoh / Keterangan |
+|---|---|---|---|
+| `VITE_LANGFLOW_URL` | Frontend | Ya | `http://localhost:7860` |
+| `VITE_LANGFLOW_API_KEY` | Frontend | Jika flow butuh `x-api-key` | Diambil dari Settings Langflow |
+| `VITE_LANGFLOW_SEARCH_FLOW_ID` | Frontend | Ya | Dari Flow Settings flow search |
+| `VITE_LANGFLOW_DRAFT_FLOW_ID` | Frontend | Ya | Dari Flow Settings flow draft |
+| `VITE_LANGFLOW_FLOW_ID` | Frontend | Tidak | Legacy, fallback bila search ID kosong |
+| `VITE_DEBUG_LANGFLOW` | Frontend | Tidak | `true` = debug panel ikut tampil |
+| `VITE_COMPOSIO_BACKEND_URL` | Frontend | Ya (default `http://localhost:5000`) | Tanpa slash di akhir |
+| `VITE_COMPOSIO_API_KEY` | Frontend | Tidak | Hanya indikator, bukan untuk kirim |
+| `COMPOSIO_API_KEY` | Backend saja | Ya, untuk kirim email | **Tanpa prefix `VITE_`** — jangan taruh di frontend |
+| `COMPOSIO_GMAIL_AUTH_CONFIG_ID` | Backend saja | Tidak (default `ac_Im0mILtarfgb`) | Dari dashboard Composio → Auth Configs → Gmail |
+| `COMPOSIO_GMAIL_VERSION` | Backend saja | Tidak (default `20260915_00`) | Pin versi toolkit Gmail |
+| `COMPOSIO_PORT` | Backend saja | Tidak (default `5000`) | Port Express |
 
 ---
 
-## 🤖 Integrasi AI (Langflow)
+## Scripts npm
 
-Aplikasi menggunakan dua Langflow flow:
-
-### Search Flow
-- Menerima deskripsi event dalam format teks
-- Membuat query optimal untuk vector database sponsor
-- Meranking sponsor berdasarkan 5 kriteria relevansi
-- Menghasilkan dua output (prose + JSON), aplikasi mem-parse keduanya secara defensif dan mengambil kandidat JSON yang valid
-
-### Draft Flow
-- Menerima konteks event lengkap + data sponsor terpilih
-- Menghasilkan satu template email dengan **placeholder dalam kurung siku** (`[Nama Perusahaan Sponsor]`, dll.)
-- Template kemudian di-*merge* secara fuzzy dengan data nyata per sponsor
-
----
-
-## 📊 Skala Relevansi Sponsor
-
-| Skor | Tingkat |
+| Command | Fungsi |
 |---|---|
-| 80 – 100 | Sangat Relevan |
-| 60 – 79  | Relevan |
-| 40 – 59  | Cukup Relevan |
-| 0 – 39   | Kurang Relevan |
+| `npm run dev` | Jalankan frontend Vite di `:5173` |
+| `npm run server` | Jalankan backend Express di `:5000` |
+| `npm run server:install` | Install dependensi backend (`server/`) |
+| `npm run build` | Build produksi (harus hijau) |
+| `npm run preview` | Preview hasil build produksi |
 
 ---
 
-## 🔒 Status & Enumerasi
+## Struktur Proyek
 
-### Status Hubungan (Relationship)
-`Belum Dihubungi` → `Terkirim` → `Dibalas` → `Diterima` / `Ditolak` / `Diacuhkan`
-
-### Status Pengiriman (Delivery)
-`Queued` → `Sending` → `Sent` / `Failed`
-
----
-
-## ⚙️ Batas Sistem
-
-| Parameter | Nilai |
-|---|---|
-| Maksimum sponsor per kampanye | 5 |
-| Maksimum email per sesi | 10 |
-| Timeout Langflow request | 120 detik |
-
----
-
-## 🛠️ Scripts
-
-```bash
-npm run dev          # Jalankan frontend (Vite :5173)
-npm run server       # Jalankan backend (Express :5000)
-npm run build        # Build produksi
-npm run preview      # Preview build produksi
+```text
+.
+├── index.html              # Title + meta sponsorQu
+├── vite.config.js          # Vite 6, port 5173
+├── .env.example            # Template env (aman di-commit)
+├── server/
+│   ├── index.js            # Express: health, Composio OAuth, kirim email, cek balasan
+│   ├── composio.js         # Client @composio/core (API key tidak pernah keluar server)
+│   └── package.json
+├── langflow/               # Template flow (diimport ke Langflow lokal)
+│   ├── sposnorQu Flow.json # Flow search + scoring sponsor
+│   └── draft email.json    # Flow generate draft email
+└── src/
+    ├── main.jsx            # Entry + ErrorBoundary
+    ├── App.jsx             # Router / + /app/* + guards
+    ├── index.css           # Design tokens (brand ungu #6D5AE6)
+    ├── landing/            # Landing.jsx, landing.css, useReveal.js
+    ├── components/         # Shell (sidebar+topbar), DebugPanel, charts
+    ├── dashboard/          # DashboardHome, CariSponsor, Draft, Hasil,
+    │                       # Kampanye, TambahSponsor, Riwayat, Setting
+    ├── lib/                # constants, validators, langflow, merge
+    └── store/              # store.jsx — state global + actions + localStorage
 ```
 
 ---
 
-## 🐛 Debug
+## Demo Script 7 Menit
 
-Aktifkan debug panel melalui **Setting** → Mode Debug, atau set `VITE_DEBUG_LANGFLOW=true` di `.env`.
+| # | Klik | Ucapkan |
+|---|---|---|
+| 0 | Scroll landing `/` | "Panitia habiskan berhari-hari cari sponsor. Satu alur membereskannya." |
+| 1 | Isi event → Cari | "Satu deskripsi — tidak pernah diketik ulang." Narasikan selagi AI bekerja |
+| 2 | Hasil: skor/chip/alasan/filter/sortir/Kartu-Daftar | "Maks lima, setiap klaim ada alasannya, tidak ada yang dikarang." |
+| 3 | Pilih → isi kampanye (konteks terbawa) → PIC/link | "Konteks terbawa otomatis; data PIC mengisi tanda tangan email." |
+| 4 | Generate → tab draft | "Satu panggilan AI per kampanye, langsung di-merge per sponsor." |
+| 5 | Tunjukkan `[..]` kuning, email manual | "Yang belum terisi diberi nama dan memblokir kirim — bisa diperbaiki." |
+| 6 | Hubungkan Gmail (OAuth asli) | "OAuth asli; kredensial tidak pernah menyentuh kode kami." |
+| 7 | Pre-send → Kirim → antrean → Riwayat | "Sepuluh per sesi, status per penerima, riwayat tercatat." |
+| 8 | Kotak outcome + tombol status | "Outcome dilacak user; setiap langkah AI bisa diinspeksi." |
 
-Panel debug menampilkan:
-- Endpoint & Flow ID yang dipanggil
-- Input yang dikirim ke Langflow
-- Waktu respons (ms) & HTTP status
-- Raw response lengkap (dapat disalin)
-
----
-
-## 📝 Catatan Teknis
-
-- Semua UI dan copy ditulis dalam **Bahasa Indonesia**
-- State aplikasi dipersistensikan ke `localStorage` (`sf_state_v1`) dengan debounce ~500ms
-- Tidak ada TypeScript, kode murni JavaScript (ES Modules)
-- Tidak ada dependency UI library eksternal, semua komponen dibangun dari scratch
-- Design system menggunakan CSS custom properties (violet/purple brand palette)
+Fallback: AI lambat → narasikan panel debug. Kirim tidak boleh jalan → berhenti setelah pre-send check.
 
 ---
 
-*SponsorQu, Dari deskripsi event ke email sponsor, dalam satu alur kerja.*
+## Stack Teknologi
+
+| Lapisan | Teknologi | Versi |
+|---|---|---|
+| Build | Vite | 6 |
+| UI | React + React DOM | 19 |
+| Routing | React Router | 7 |
+| Backend | Express + cors + dotenv | 4 |
+| AI | Langflow (lokal `:7860`) | — |
+| Email | Composio `@composio/core` + Gmail OAuth | 0.22 |
+| Styling | CSS murni + design token (tanpa library UI) | — |
+
+---
+
+## Batas Sistem & Enum
+
+| Aturan | Nilai |
+|---|---|
+| Maks sponsor per pencarian AI | 5 |
+| Maks email per sesi kirim | 10 (diperingatkan, tidak dipotong diam-diam) |
+| Timeout request Langflow | 120 detik |
+| `input_type` Langflow | **Selalu `"chat"`**, tidak pernah `"text"` |
+| Format draft | Baris `Subjek:` + body `Isi:` dengan placeholder `[kurung]` (tidak pernah `{{}}`) |
+| Tingkat relevansi | Sangat Relevan (80–100) / Relevan (60–79) / Cukup Relevan (40–59) / Kurang Relevan (0–39) |
+| Status hubungan | Belum Dihubungi / Terkirim / Dibalas / Diterima / Ditolak / Diacuhkan |
+| Status pengiriman | Queued / Sending / Sent / Failed |
+
+---
+
+## Troubleshooting
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `Failed to fetch` / `CORS error` saat hubungkan Gmail | Backend `:5000` tidak terjangkau dari browser, atau port dipakai proses lain (`EADDRINUSE`) | Pastikan `npm run server` jalan dan banner-nya `:5000`; buka lewat `localhost:5173`; cek tab Network DevTools |
+| Output Langflow "no data" | `input_type:"text"` pada flow yang hanya punya Chat Input | Kode selalu memakai `"chat"` (`src/lib/langflow.js`) — jangan diubah |
+| Pencarian gagal / hasil kosong | Flow ID salah, Langflow mati, atau API key salah | Cek Pengaturan → status Langflow; buka panel debug untuk raw response |
+| Placeholder tidak pernah terisi | LLM mengarang frasa placeholder tiap run | Pakai tombol Merge Ulang di halaman draft |
+| `.env` diubah tapi tidak berpengaruh | Vite menanam `VITE_*` saat start | Restart `npm run dev` |
+| Layar putih setelah navigasi | Referensi router menggantung | Cek console + `ErrorBoundary` (`src/main.jsx`) |
+| Status `Sent` tidak pernah muncul | Gmail belum terhubung / backend mati | Ikuti kartu Connect di halaman draft → cek status → cek log server |
+
+---
+
+## Keamanan
+
+- **Jangan pernah commit `.env`.** File `.gitignore` repo ini sudah mengabaikan `.env`, `node_modules/`, dan `dist/`. Yang di-commit hanya `.env.example` (berisi placeholder).
+- Bila API key pernah bocor ke publik: **putar ulang (regenerate) key** di dashboard Composio/Langflow, lalu isi ulang `.env` lokal.
+- `COMPOSIO_API_KEY` (tanpa prefix `VITE_`) hanya dibaca `server/` — tidak pernah dikirim ke browser.
+
+---
+
+## Dokumen Internal
+
+Spesifikasi lengkap untuk pengembang ada di repo:
+
+- `00-START-HERE.md` — urutan build & iron rules
+- `01-CONTRACTS.md` — kontrak data, validator, enum
+- `02-APP.md` — panduan setup, shell, halaman, backend
+- `03-REFERENCE.md` — prompt Langflow verbatim, graf flow, token desain, debug playbook

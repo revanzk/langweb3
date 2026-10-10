@@ -78,8 +78,8 @@ Jalankan perintah dari folder root repo.
 ### 1. Clone & install dependensi
 
 ```bash
-git clone <url-repo-ini>
-cd <nama-folder>
+git clone https://github.com/revanzk/sponsorQU.git
+cd sponsorQU
 
 # Install frontend
 npm install
@@ -90,19 +90,29 @@ npm run server:install
 
 ### 2. Siapkan Langflow (wajib untuk alur AI)
 
-Aplikasi memanggil **2 flow** di Langflow lokal (`http://localhost:7860`):
+Aplikasi memanggil **2 flow** di Langflow lokal (`http://localhost:7860`)
+plus **1 file dataset sponsor** yang harus dimasukkan ke vector database:
 
-| Flow | File template | Fungsi |
+| Jenis | File | Fungsi |
 |---|---|---|
-| Search | `langflow/sposnorQu Flow.json` | Query planner + vector search + ranker + JSON parser → rekomendasi sponsor |
-| Draft | `langflow/draft email.json` | Merapikan template menjadi draft `Subjek:` + `Isi:` dengan placeholder `[kurung]` |
+| Search flow | `langflow/SponsorQu Flow.json` | Query planner + vector search + ranker + JSON parser → rekomendasi sponsor |
+| Draft flow | `langflow/draft email.json` | Merapikan template menjadi draft `Subjek:` + `Isi:` dengan placeholder `[kurung]` |
+| Dataset sponsor | `langflow/sponsor_database_audited_final.txt` | Daftar sponsor (array JSON: nama, industri, lokasi, audiens, kontak, dll) — dimasukkan ke Astra DB lewat cabang ingest |
 
 Langkah:
 
 ```text
 1. Jalankan Langflow dan buka http://localhost:7860
 2. Import kedua file JSON di atas (drag & drop ke kanvas Langflow)
-3. Pastikan vector database sponsor sudah terisi (cabang ingest File → Split → Astra di flow search)
+   sehingga menjadi 2 flow terpisah: search dan draft
+3. Isi vector database sponsor (WAJIB sebelum pencarian bisa jalan):
+   a. Buka flow search, cari cabang ingest:
+      Read File -> Split Text -> Ingest Data -> Astra DB
+   b. Pada komponen Read File, arahkan ke file:
+      langflow/sponsor_database_audited_final.txt
+   c. Jalankan cabang ingest (tombol Run pada komponen Ingest Data):
+      file dibaca -> di-split -> di-embed -> masuk ke Astra DB
+   d. Tunggu status sukses, lalu verifikasi collection Astra DB sudah terisi
 4. Catat Flow ID masing-masing flow (ada di Flow Settings) — dipakai di langkah 3
 ```
 
@@ -207,9 +217,10 @@ http://localhost:5173
 │   ├── index.js            # Express: health, Composio OAuth, kirim email, cek balasan
 │   ├── composio.js         # Client @composio/core (API key tidak pernah keluar server)
 │   └── package.json
-├── langflow/               # Template flow (diimport ke Langflow lokal)
-│   ├── sposnorQu Flow.json # Flow search + scoring sponsor
-│   └── draft email.json    # Flow generate draft email
+├── langflow/               # Template flow + dataset (diimport ke Langflow lokal)
+│   ├── SponsorQu Flow.json # Flow search + scoring sponsor
+│   ├── draft email.json    # Flow generate draft email
+│   └── sponsor_database_audited_final.txt  # Dataset sponsor → Read File → Astra DB
 └── src/
     ├── main.jsx            # Entry + ErrorBoundary
     ├── App.jsx             # Router / + /app/* + guards

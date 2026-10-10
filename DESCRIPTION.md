@@ -69,7 +69,7 @@ Fokus pada alur inti: **Cari sponsor → Draft email → Kirim → Pantau**. Tar
 - **Open Sponsor Board**: Papan posting dua arah, panitia bisa post kebutuhan sponsorship, perusahaan bisa post program open sponsorship mereka, keduanya bisa saling menemukan tanpa perantara
 - **API untuk integrasi**: Memungkinkan platform manajemen event lain (seperti Eventbrite-style lokal) untuk mengintegrasikan fitur pencarian sponsor SponsorQu
 - **White-label untuk kampus**: Universitas bisa mengadopsi SponsorQu sebagai platform resmi untuk seluruh unit kegiatan mahasiswanya
-- **Ekspansi regional**: Menyasar pasar Asia Tenggara (Malaysia, Filipina) yang memiliki ekosistem event kampus serupa
+- **Ekspansi Nasional**: Mulai memperluas database ke seluruh Indonesia
 
 ### Model Bisnis
 | Sumber Pendapatan | Mekanisme |
